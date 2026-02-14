@@ -1,6 +1,8 @@
 # pcb-bridge
 Integration von pcb2gcode und Height-Map-Kompensation für OpenBuilds CONTROL.
 
+**Entwickelt mit Unterstützung von Google Gemini.**
+
 ## Architektur
 - **Frontend**: OpenBuilds CONTROL JavaScript Makros
 - **Backend**: FastAPI Server (Python) zur Verarbeitung von G-Code und Gerber-Files
@@ -11,7 +13,7 @@ Das Projekt verbindet die Web-Oberfläche von OpenBuilds CONTROL mit leistungsf�
 1. **Gerber-Upload**: Über ein JS-Makro werden Gerber-Dateien an das Backend gesendet.
 2. **Verarbeitung**: Das Backend nutzt `pcb2gcode`, um Isolationsfräspfade zu berechnen.
 3. **Leveling**: Eine zuvor erstellte Heightmap (JSON) wird genutzt, um den Z-Code der Fräspfade an die Unebenheiten der Platine anzupassen (Warping).
-4. **Output**: Der fertige G-Code wird im Backend-Verzeichnis gespeichert und kann von dort manuell in CONTROL geladen werden.
+4. **Output**: Der generierte G-Code (Front, Outline, Drill) wird direkt in den OpenBuilds CONTROL Editor geladen und visualisiert.
 
 ## Komponenten
 - **FastAPI**: Python Web-Framework für die API.
@@ -28,3 +30,25 @@ Das Projekt verbindet die Web-Oberfläche von OpenBuilds CONTROL mit leistungsf�
 - /bin: Lokal pcb2gcode ausführbare Dateien ablegen (wird von Git ignoriert)
 - /macros: JavaScript Quellcode für die Makros
 - /backend: API und Transformations-Logik
+
+## Bekannte Einschränkungen / Design-Entscheidungen
+- **Probing**: Die Logik für das physische Abtasten (G38.2) ist im Frontend-Makro vorbereitet, muss aber noch final auf die Hardware abgestimmt und getestet werden.
+
+## Testing
+Um die API ohne Frontend zu testen, liegen Beispiel-Dateien unter `tests/samples/`.
+
+Beispielaufruf mit cURL:
+```bash
+curl -X POST "http://127.0.0.1:8000/process/pcb" \
+  -F "front=@tests/samples/Front.gbr" \
+  -F "outline=@tests/samples/Edge_Cuts.gbr" \
+  -F "drill=@tests/samples/Drill.drl" \
+  -F "z_work=-0.1" \
+  -F "feed_rate=200"
+```
+
+## Roadmap / Nächste Schritte
+1. **Echtes Probing**: Implementierung der G38.2 Schleife im JavaScript-Makro (Kommunikation via Socket).
+2. **Leveling-Mathematik**: Verifizierung der Koordinatensysteme (Maschinen- vs. Arbeitskoordinaten) beim Anwenden der Heightmap.
+3. **Parameter**: Weitere pcb2gcode-Optionen (z.B. Werkzeugdurchmesser) im Frontend konfigurierbar machen.
+4. **Hardware-Tests**: Validierung des Workflows an der echten CNC-Maschine.

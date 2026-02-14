@@ -3,11 +3,21 @@ import subprocess
 import json
 import numpy as np
 from scipy.interpolate import griddata
+import platform
 
 class PcbTransformer:
-    def __init__(self, data_dir="backend/data"):
-        self.data_dir = data_dir
+    def __init__(self, data_dir=None):
+        # Pfade bestimmen (relativ zum Projekt-Root)
+        # transformer.py liegt in backend/, also gehen wir eine Ebene hoch
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(base_dir)
+        
+        self.data_dir = data_dir if data_dir else os.path.join(base_dir, "data")
         self.probe_file = os.path.join(data_dir, "probe_result.json")
+        
+        exe_name = "pcb2gcode.exe" if platform.system() == "Windows" else "pcb2gcode"
+        self.pcb2gcode_bin = os.path.join(project_root, "bin", exe_name)
+        self.config_file = os.path.join(project_root, "config", "pcb2gcode.conf")
 
     def run_pcb2gcode(self, front_gerber, outline_gerber, drill_gerber, config):
         """
@@ -17,19 +27,29 @@ class PcbTransformer:
         os.makedirs(output_dir, exist_ok=True)
         
         # Basis-Kommando
-        cmd = ["pcb2gcode"]
+        if os.path.exists(self.pcb2gcode_bin):
+            cmd = [self.pcb2gcode_bin]
+        else:
+            cmd = ["pcb2gcode"] # Fallback auf System-PATH
+            
+        # Config-Datei laden
+        if os.path.exists(self.config_file):
+            cmd.extend(["--config", self.config_file])
         
-        # Eingabedateien
+        # Eingabedateien und explizite Outputs
+        # Wir setzen explizite Ausgabedateinamen, um Config-Werte zu überschreiben
         if front_gerber:
             cmd.extend(["--front", front_gerber])
+            cmd.extend(["--front-output", "pcb_project_front.gcode"])
         if outline_gerber:
             cmd.extend(["--outline", outline_gerber])
+            cmd.extend(["--outline-output", "pcb_project_outline.gcode"])
         if drill_gerber:
             cmd.extend(["--drill", drill_gerber])
+            cmd.extend(["--drill-output", "pcb_project_drill.gcode"])
             
         # Output Konfiguration
         cmd.extend(["--output-dir", output_dir])
-        cmd.extend(["--basename", "pcb_project"])
         
         # Parameter aus Config (Beispiele)
         cmd.extend(["--zwork", str(config.get("z_work", -0.1))])

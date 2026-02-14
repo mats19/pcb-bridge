@@ -10,6 +10,10 @@ import uvicorn
 from typing import Optional
 from transformer import PcbTransformer
 
+# Pfade relativ zur Position dieser Datei (main.py) bestimmen
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
 app = FastAPI(title="pcb-bridge API")
 
 app.add_middleware(
@@ -54,15 +58,12 @@ async def save_probe_result(result: ProbeResult):
     """
     Speichert das Ergebnis eines echten Abtastvorgangs (vom Frontend gesendet).
     """
-    file_path = os.path.join("backend", "data", "probe_result.json")
+    file_path = os.path.join(DATA_DIR, "probe_result.json")
     with open(file_path, "w") as f:
         f.write(result.json(indent=2))
     
     viz = generate_viz_gcode(result.points)
-    viz_path = os.path.join("backend", "probe_viz.gcode")
-    with open(viz_path, "w") as f:
-        f.write(viz)
-    return {"status": "saved", "file": file_path, "viz_file": viz_path}
+    return {"status": "saved", "file": file_path, "viz_gcode": viz}
 
 @app.post("/probe/simulate")
 async def simulate_probe_run(config: ProbeConfig):
@@ -84,15 +85,70 @@ async def simulate_probe_run(config: ProbeConfig):
 
     result_data = {"config": config.dict(), "points": simulated_points}
     
-    result_path = os.path.join("backend", "data", "probe_result.json")
+    result_path = os.path.join(DATA_DIR, "probe_result.json")
     with open(result_path, "w") as f:
         json.dump(result_data, f, indent=2)
 
     viz = generate_viz_gcode(simulated_points)
-    viz_path = os.path.join("backend", "simulation.gcode")
-    with open(viz_path, "w") as f:
-        f.write(viz)
-    return {"message": "Simulation complete", "file": result_path, "viz_file": viz_path, "points": simulated_points}
+    return {"message": "Simulation complete", "file": result_path, "viz_gcode": viz, "points": simulated_points}
+
+@app.get("/probe/latest")
+async def get_latest_probe_result():
+    """
+    Lädt das letzte gespeicherte Probe-Ergebnis (falls vorhanden).
+    """
+    file_path = os.path.join(DATA_DIR, "probe_result.json")
+    if not os.path.exists(file_path):
+        return {"status": "none", "message": "No probe data found"}
+    
+    with open(file_path, "r") as f:
+        data = json.load(f)
+    
+    # Visualisierung neu generieren
+    viz = generate_viz_gcode(data.get("points", []))
+    
+    return {
+        "status": "success", 
+        "config": data.get("config"), 
+        "points": data.get("points"), 
+        "viz_gcode": viz
+    }
+
+@app.on_event("startup")
+async def startup_event():
+    file_path = os.path.join(DATA_DIR, "probe_result.json")
+    if os.path.exists(file_path):
+        print(f"Startup: Found existing probe data at {file_path}")
+    else:
+        print("Startup: No existing probe data found.")
+
+@app.get("/process/latest")
+async def get_latest_process():
+    """
+    Lädt das Ergebnis der letzten Gerber-Verarbeitung.
+    """
+    state_file = os.path.join(DATA_DIR, "process_state.json")
+    if not os.path.exists(state_file):
+        return {"status": "none"}
+        
+    with open(state_file, "r") as f:
+        state = json.load(f)
+        
+    # Inhalte der G-Code Dateien laden
+    gcode_data = {}
+    for key in ["front", "outline", "drill"]:
+        path = state.get("files", {}).get(key)
+        if path and os.path.exists(path):
+            with open(path, "r") as f:
+                gcode_data[key] = f.read()
+        else:
+            gcode_data[key] = None
+            
+    return {
+        "status": "success",
+        "config": state.get("config"),
+        "gcode": gcode_data
+    }
 
 @app.post("/process/pcb")
 async def process_pcb(
@@ -105,7 +161,7 @@ async def process_pcb(
     """
     Nimmt Gerber-Dateien entgegen, ruft pcb2gcode auf und wendet Leveling an.
     """
-    upload_dir = os.path.join("backend", "data", "uploads")
+    upload_dir = os.path.join(DATA_DIR, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
     
     # Dateien speichern
@@ -129,21 +185,41 @@ async def process_pcb(
             shutil.copyfileobj(drill.file, buffer)
             
     # Transformer initialisieren
-    transformer = PcbTransformer()
+    transformer = PcbTransformer(data_dir=DATA_DIR)
     
     # 1. G-Code generieren
     config = {"z_work": z_work, "feed_rate": feed_rate}
     raw_files = transformer.run_pcb2gcode(front_path, outline_path, drill_path, config)
     
-    # 2. Leveling anwenden (Beispielhaft nur auf Front/Traces)
-    # In der Praxis würde man alle generierten Files leveln und kombinieren
-    leveled_gcode = transformer.apply_leveling(raw_files["front"])
+    # 2. Leveling auf alle generierten Dateien anwenden
+    leveled_files = {}
+    gcode_contents = {}
     
-    output_path = os.path.join("backend", "pcb_leveled.gcode")
-    with open(output_path, "w") as f:
-        f.write(leveled_gcode)
+    for key in ["front", "outline", "drill"]:
+        raw_path = raw_files.get(key)
+        if raw_path and os.path.exists(raw_path):
+            # Leveling versuchen
+            gcode = transformer.apply_leveling(raw_path)
+            
+            # Fallback: Originaldatei lesen, wenn kein Leveling möglich (z.B. keine Probe-Daten)
+            if gcode is None:
+                with open(raw_path, "r") as f:
+                    gcode = f"; WARNUNG: Kein Leveling angewendet (keine Probe-Daten gefunden)\n" + f.read()
+            
+            # Speichern
+            out_path = os.path.join(BASE_DIR, f"pcb_leveled_{key}.gcode")
+            with open(out_path, "w") as f:
+                f.write(gcode)
+            
+            leveled_files[key] = out_path
+            gcode_contents[key] = gcode
+
+    # Status speichern für Reload
+    state_file = os.path.join(DATA_DIR, "process_state.json")
+    with open(state_file, "w") as f:
+        json.dump({"config": config, "files": leveled_files}, f, indent=2)
     
-    return {"status": "success", "file": output_path}
+    return {"status": "success", "files": leveled_files, "gcode": gcode_contents}
 
 @app.get("/status")
 async def get_status():

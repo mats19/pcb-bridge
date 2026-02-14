@@ -4,35 +4,43 @@
 (function() {
     var content = `
         <div class="p-2">
-            <h5>Gerber Verarbeitung & Leveling</h5>
+            <h5>Gerber Processing & Leveling</h5>
             <hr>
             <form id="gerberForm">
                 <div class="mb-2">
                     <label>Front Copper (Gerber)</label>
-                    <input type="file" id="file_front" data-role="file" data-mode="drop">
+                    <input type="file" id="file_front" data-role="file" data-button-title="Select">
                 </div>
                 <div class="mb-2">
                     <label>Outline / Edge Cuts</label>
-                    <input type="file" id="file_outline" data-role="file" data-mode="drop">
+                    <input type="file" id="file_outline" data-role="file" data-button-title="Select">
                 </div>
                 <div class="mb-2">
                     <label>Drill File</label>
-                    <input type="file" id="file_drill" data-role="file" data-mode="drop">
+                    <input type="file" id="file_drill" data-role="file" data-button-title="Select">
                 </div>
                 <div class="row mb-2">
                     <div class="cell-6">
-                        <label>Frästiefe (Z-Work)</label>
+                        <label>Milling Depth (Z-Work)</label>
                         <input type="number" id="val_zwork" value="-0.1" step="0.05" data-role="input">
                     </div>
                     <div class="cell-6">
-                        <label>Vorschub (Feed)</label>
+                        <label>Feed Rate</label>
                         <input type="number" id="val_feed" value="200" data-role="input">
                     </div>
                 </div>
             </form>
+            
+            <div id="result_area" style="display:none;" class="mt-2 border p-2">
+                <h6>Show Result:</h6>
+                <div class="row">
+                    <div class="cell-12" id="view_buttons"></div>
+                </div>
+            </div>
+
             <div class="mt-4">
                 <button class="button success w-100" id="btn_process">
-                    <span class="mif-cogs"></span> Verarbeiten & Leveln
+                    <span class="mif-cogs"></span> Process & Level
                 </button>
             </div>
         </div>
@@ -42,9 +50,80 @@
         title: "PCB Bridge - Gerber",
         content: content,
         width: 500,
-        actions: [{ caption: "Schließen", cls: "js-dialog-close" }],
+        actions: [{ caption: "Close", cls: "js-dialog-close" }],
         onShow: function(dialog) {
             var el = dialog.element;
+            // Speicher für die geladenen G-Codes
+            var currentGcodeData = { front: null, outline: null, drill: null };
+
+            function updateEditor(gCode) {
+                // 1. Code in den Editor schreiben
+                if (typeof editor !== 'undefined' && editor.session) {
+                    editor.session.setValue(gCode);
+                    if (typeof printLog === "function") printLog("Editor content updated.");
+                }
+
+                // 2. Den 3D-Viewer aktualisieren
+                if (typeof parseGcodeInWebWorker === "function") {
+                    parseGcodeInWebWorker(editor.getValue());
+                    if (typeof printLog === "function") printLog("3D View refresh triggered.");
+                }
+
+                // 3. Viewport zentrieren
+                if (typeof resetView === "function") resetView();
+            }
+
+            function renderViewButtons() {
+                var container = el.find('#view_buttons');
+                container.html('');
+                el.find('#result_area').show();
+
+                var map = {
+                    'front': { label: 'Front (Traces)', icon: 'mif-flow-line', cls: 'primary' },
+                    'outline': { label: 'Outline (Cut)', icon: 'mif-cut', cls: 'alert' },
+                    'drill': { label: 'Drill (Holes)', icon: 'mif-more-vert', cls: 'warning' }
+                };
+
+                Object.keys(currentGcodeData).forEach(key => {
+                    if (currentGcodeData[key]) {
+                        var btn = $(`<button class="button small ${map[key].cls} mr-1"><span class="${map[key].icon}"></span> ${map[key].label}</button>`);
+                        btn.on('click', function() {
+                            updateEditor(currentGcodeData[key]);
+                            Metro.toast.create(map[key].label + " loaded.", null, 1000, "info");
+                        });
+                        container.append(btn);
+                    }
+                });
+            }
+
+            function loadLatestData() {
+                fetch('http://127.0.0.1:8000/process/latest')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "success" && data.gcode) {
+                        currentGcodeData = data.gcode;
+                        renderViewButtons();
+                        
+                        // Automatisch Front laden, wenn vorhanden
+                        if (currentGcodeData.front) {
+                            updateEditor(currentGcodeData.front);
+                            Metro.toast.create("Latest processing loaded.", null, 2000, "success");
+                        }
+                        
+                        // Formularwerte wiederherstellen (optional)
+                        if (data.config) {
+                            if(data.config.z_work) el.find('#val_zwork').val(data.config.z_work);
+                            if(data.config.feed_rate) el.find('#val_feed').val(data.config.feed_rate);
+                        }
+                    }
+                })
+                .catch(e => {
+                    console.log("No previous data or error:", e);
+                });
+            }
+
+            // Beim Start versuchen, alte Daten zu laden
+            loadLatestData();
 
             el.find('#btn_process').on('click', function() {
                 var formData = new FormData();
@@ -60,7 +139,7 @@
                 formData.append("z_work", el.find('#val_zwork').val());
                 formData.append("feed_rate", el.find('#val_feed').val());
 
-                Metro.toast.create("Verarbeitung läuft...", null, 2000, "info");
+                Metro.toast.create("Processing...", null, 2000, "info");
 
                 fetch('http://127.0.0.1:8000/process/pcb', {
                     method: 'POST',
@@ -69,14 +148,19 @@
                 .then(r => r.json())
                 .then(data => {
                     if(data.status === "success") {
-                        Metro.toast.create("Erfolg! Datei gespeichert: " + data.file, null, 5000, "success");
-                        dialog.close();
+                        Metro.toast.create("Processing successful!", null, 3000, "success");
+                        
+                        currentGcodeData = data.gcode;
+                        renderViewButtons();
+
+                        // Standardmäßig Front anzeigen
+                        if (data.gcode.front) updateEditor(data.gcode.front);
                     } else {
-                        Metro.toast.create("Fehler: " + JSON.stringify(data), null, 5000, "alert");
+                        Metro.toast.create("Error: " + JSON.stringify(data), null, 5000, "alert");
                     }
                 })
                 .catch(e => {
-                    Metro.toast.create("Backend Fehler: " + e, null, 3000, "alert");
+                    Metro.toast.create("Backend Error: " + e, null, 3000, "alert");
                 });
             });
         }
