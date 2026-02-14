@@ -1,0 +1,18 @@
+# Binaries und Executables
+bin/pcb2gcode*
+*.exe
+*.bin
+*.app
+
+# Python
+__pycache__/
+.venv/
+.conda/
+*.pyc
+.env
+
+# Daten und Temporäres
+backend/data/*
+*.gcode
+*.csv
+.DS_Store
