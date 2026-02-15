@@ -182,7 +182,7 @@
 
                 // Konfiguration
                 var zSafe = 2.0;       // Rückzugshöhe [mm]
-                var zProbeMin = -5.0;  // Maximale Tiefe [mm]
+                var zProbeMin = -2.0;  // Maximale Tiefe [mm]
                 var feed = 100;        // Probing Geschwindigkeit [mm/min]
 
                 // Punkte generieren

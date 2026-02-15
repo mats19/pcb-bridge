@@ -1,54 +1,57 @@
 # pcb-bridge
-Integration von pcb2gcode und Height-Map-Kompensation für OpenBuilds CONTROL.
+Integration of pcb2gcode and Height-Map-Compensation for OpenBuilds CONTROL.
 
-**Entwickelt mit Unterstützung von Google Gemini.**
+**STATUS: EXPERIMENTAL / IN DEVELOPMENT. UNTESTED ON REAL HARDWARE.**
+**USE AT YOUR OWN RISK.**
 
-## Architektur
-- **Frontend**: OpenBuilds CONTROL JavaScript Makros
-- **Backend**: FastAPI Server (Python) zur Verarbeitung von G-Code und Gerber-Files
-- **Kommunikation**: REST API (lokal)
+**Developed with support from Google Gemini.**
 
-## Konzept
-Das Projekt verbindet die Web-Oberfläche von OpenBuilds CONTROL mit leistungsfähigen Python-Tools.
-1. **Gerber-Upload**: Über ein JS-Makro werden Gerber-Dateien an das Backend gesendet.
-2. **Verarbeitung**: Das Backend nutzt `pcb2gcode`, um Isolationsfräspfade zu berechnen.
-3. **Leveling**: Eine zuvor erstellte Heightmap (JSON) wird genutzt, um den Z-Code der Fräspfade an die Unebenheiten der Platine anzupassen (Warping).
-4. **Output**: Der generierte G-Code (Front, Outline, Drill) wird direkt in den OpenBuilds CONTROL Editor geladen und visualisiert.
+## Architecture
+- **Frontend**: OpenBuilds CONTROL JavaScript Macros
+- **Backend**: FastAPI Server (Python) for G-code and Gerber processing
+- **Communication**: REST API (local)
+
+## Concept
+This project bridges the web interface of OpenBuilds CONTROL with powerful Python tools.
+1. **Gerber Upload**: Gerber files are sent to the backend via a JS macro.
+2. **Processing**: The backend uses `pcb2gcode` to calculate isolation milling paths.
+3. **Leveling**: A previously created heightmap (JSON) is used to warp the Z-code of the milling paths to compensate for PCB unevenness.
+4. **Output**: The generated G-code (Front, Outline, Drill) is loaded directly into the OpenBuilds CONTROL editor and visualized.
 
 ## Features
-- **Multi-Layer Support**: Separate Verarbeitung und Visualisierung von Front (Traces), Outline (Cutout) und Drill (Bohrungen).
-- **Auto-Leveling**: Anwendung einer Heightmap auf den G-Code zur Kompensation von Platinen-Unebenheiten.
-- **Offset**: Verschiebung des Nullpunkts (Offset X/Y) direkt bei der Verarbeitung.
-- **Segmentation**: Automatische Unterteilung langer Fahrwege (>1mm) für präzises Leveling auch bei geraden Leiterbahnen.
-- **Statistiken**: Anzeige von Dimensionen (Bounding Box) und Z-Bereichen für jede Datei.
-- **Persistenz**: Speicherung des letzten Verarbeitungszustands und der Probe-Daten.
+- **Multi-Layer Support**: Separate processing and visualization of Front (Traces), Outline (Cutout), and Drill (Holes).
+- **Auto-Leveling**: Application of a heightmap to the G-code to compensate for PCB warping.
+- **Offset**: Zero-point shift (Offset X/Y) directly during processing.
+- **Segmentation**: Automatic subdivision of long moves (>1mm) for precise leveling even on straight traces.
+- **Statistics**: Display of dimensions (Bounding Box) and Z-ranges for each file.
+- **Persistence**: Storage of the last processing state and probe data.
 
-## Komponenten
-- **FastAPI**: Python Web-Framework für die API.
-- **pcb2gcode**: Kommandozeilen-Tool zur Umwandlung von Gerber in G-Code.
-- **NumPy / SciPy**: Für die mathematische Interpolation der Heightmap.
-- **Metro UI**: UI-Framework innerhalb von OpenBuilds CONTROL für die Dialoge.
+## Components
+- **FastAPI**: Python web framework for the API.
+- **pcb2gcode**: Command-line tool for converting Gerber to G-code.
+- **NumPy / SciPy**: For mathematical interpolation of the heightmap.
+- **Metro UI**: UI framework within OpenBuilds CONTROL for the dialogs.
 
 ## Setup
-1. Conda Environment: `conda env create -f environment.yml`
-2. Aktiviere Env: `conda activate pcb-bridge`
-3. Starte Backend: `python backend/main.py`
+1. Create Conda Environment: `conda env create -f environment.yml`
+2. Activate Env: `conda activate pcb-bridge`
+3. Start Backend: `python backend/main.py`
 
-## Konfiguration
-Die Parameter für `pcb2gcode` (z.B. Werkzeugdurchmesser, Drehzahlen, Frästiefen) werden zentral in der Datei `config/pcb2gcode.conf` gesteuert. Das Backend liest diese Werte aus, um korrekte Werkzeugwechsel-Hinweise in den G-Code einzufügen.
+## Configuration
+Parameters for `pcb2gcode` (e.g., tool diameters, speeds, milling depths) are controlled centrally in the `config/pcb2gcode.conf` file. The backend reads these values to inject correct tool change prompts into the G-code.
 
-## Ordner
-- /bin: Lokal pcb2gcode ausführbare Dateien ablegen (wird von Git ignoriert)
-- /macros: JavaScript Quellcode für die Makros
-- /backend: API und Transformations-Logik
+## Folders
+- `/bin`: Place local `pcb2gcode` executables here (ignored by Git).
+- `/macros`: JavaScript source code for the macros.
+- `/backend`: API and transformation logic.
 
-## Bekannte Einschränkungen / Design-Entscheidungen
-- **Probing**: Die Logik für das physische Abtasten (G38.2) ist im Frontend-Makro vorbereitet, muss aber noch final auf die Hardware abgestimmt und getestet werden.
+## Known Limitations / Design Decisions
+- **Probing**: The logic for physical probing (G38.2) is implemented in the frontend macro but requires final validation and tuning on real hardware.
 
 ## Testing
-Um die API ohne Frontend zu testen, liegen Beispiel-Dateien unter `tests/samples/`.
+To test the API without the frontend, sample files are located in `tests/samples/`.
 
-Beispielaufruf mit cURL:
+Example call with cURL:
 ```bash
 curl -X POST "http://127.0.0.1:8000/process/pcb" \
   -F "front=@tests/samples/Front.gbr" \
