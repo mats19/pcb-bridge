@@ -37,6 +37,15 @@ This project bridges the web interface of OpenBuilds CONTROL with powerful Pytho
 2. Activate Env: `conda activate pcb-bridge`
 3. Start Backend: `python backend/main.py`
 
+## Setup (Windows / CNC-PC)
+1. Install Miniconda for Windows.
+2. Open **Anaconda Prompt** and navigate to the project folder.
+3. Create Environment: `conda env create -f environment.yml`
+4. **pcb2gcode**:
+   - Download the Windows ZIP from GitHub Releases.
+   - Extract `pcb2gcode.exe` (and all included DLLs) into the `/bin` folder of this project.
+5. Start Backend: `python backend/main.py`
+
 ## Configuration
 Parameters for `pcb2gcode` (e.g., tool diameters, speeds, milling depths) are controlled centrally in the `config/pcb2gcode.conf` file. The backend reads these values to inject correct tool change prompts into the G-code.
 
