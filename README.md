@@ -15,6 +15,13 @@ Das Projekt verbindet die Web-Oberfläche von OpenBuilds CONTROL mit leistungsf�
 3. **Leveling**: Eine zuvor erstellte Heightmap (JSON) wird genutzt, um den Z-Code der Fräspfade an die Unebenheiten der Platine anzupassen (Warping).
 4. **Output**: Der generierte G-Code (Front, Outline, Drill) wird direkt in den OpenBuilds CONTROL Editor geladen und visualisiert.
 
+## Features
+- **Multi-Layer Support**: Separate Verarbeitung und Visualisierung von Front (Traces), Outline (Cutout) und Drill (Bohrungen).
+- **Auto-Leveling**: Anwendung einer Heightmap auf den G-Code zur Kompensation von Platinen-Unebenheiten.
+- **Offset**: Verschiebung des Nullpunkts (Offset X/Y) direkt bei der Verarbeitung.
+- **Statistiken**: Anzeige von Dimensionen (Bounding Box) und Z-Bereichen für jede Datei.
+- **Persistenz**: Speicherung des letzten Verarbeitungszustands und der Probe-Daten.
+
 ## Komponenten
 - **FastAPI**: Python Web-Framework für die API.
 - **pcb2gcode**: Kommandozeilen-Tool zur Umwandlung von Gerber in G-Code.

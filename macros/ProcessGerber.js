@@ -8,15 +8,15 @@
             <hr>
             <form id="gerberForm">
                 <div class="mb-2">
-                    <label>Front Copper (Gerber)</label>
+                    <label>Front Copper (Gerber) <span id="lbl_front" class="text-muted text-small"></span></label>
                     <input type="file" id="file_front" data-role="file" data-button-title="Select">
                 </div>
                 <div class="mb-2">
-                    <label>Outline / Edge Cuts</label>
+                    <label>Outline / Edge Cuts <span id="lbl_outline" class="text-muted text-small"></span></label>
                     <input type="file" id="file_outline" data-role="file" data-button-title="Select">
                 </div>
                 <div class="mb-2">
-                    <label>Drill File</label>
+                    <label>Drill File <span id="lbl_drill" class="text-muted text-small"></span></label>
                     <input type="file" id="file_drill" data-role="file" data-button-title="Select">
                 </div>
                 <div class="row mb-2">
@@ -29,10 +29,21 @@
                         <input type="number" id="val_feed" value="200" data-role="input">
                     </div>
                 </div>
+                <div class="row mb-2">
+                    <div class="cell-6">
+                        <label>Offset X [mm]</label>
+                        <input type="number" id="val_offset_x" value="0" data-role="input">
+                    </div>
+                    <div class="cell-6">
+                        <label>Offset Y [mm]</label>
+                        <input type="number" id="val_offset_y" value="0" data-role="input">
+                    </div>
+                </div>
             </form>
             
             <div id="result_area" style="display:none;" class="mt-2 border p-2">
                 <h6>Show Result:</h6>
+                <div id="dimensions_info" class="text-small mb-2 text-muted"></div>
                 <div class="row">
                     <div class="cell-12" id="view_buttons"></div>
                 </div>
@@ -55,6 +66,7 @@
             var el = dialog.element;
             // Speicher für die geladenen G-Codes
             var currentGcodeData = { front: null, outline: null, drill: null };
+            var currentDimensions = { front: null, outline: null, drill: null };
 
             function updateEditor(gCode) {
                 // 1. Code in den Editor schreiben
@@ -73,6 +85,17 @@
                 if (typeof resetView === "function") resetView();
             }
 
+            function updateDimensionsInfo(dims) {
+                var div = el.find('#dimensions_info');
+                if (dims) {
+                    div.html(`<b>Dimensions:</b> ${dims.width.toFixed(2)} x ${dims.height.toFixed(2)} mm <br> 
+                              <b>Range:</b> X: ${dims.min_x.toFixed(2)}..${dims.max_x.toFixed(2)} / Y: ${dims.min_y.toFixed(2)}..${dims.max_y.toFixed(2)} <br>
+                              <b>Z-Range (Final):</b> ${dims.min_z.toFixed(3)} .. ${dims.max_z.toFixed(3)} mm`);
+                } else {
+                    div.html('');
+                }
+            }
+
             function renderViewButtons() {
                 var container = el.find('#view_buttons');
                 container.html('');
@@ -89,6 +112,7 @@
                         var btn = $(`<button class="button small ${map[key].cls} mr-1"><span class="${map[key].icon}"></span> ${map[key].label}</button>`);
                         btn.on('click', function() {
                             updateEditor(currentGcodeData[key]);
+                            updateDimensionsInfo(currentDimensions[key]);
                             Metro.toast.create(map[key].label + " loaded.", null, 1000, "info");
                         });
                         container.append(btn);
@@ -102,11 +126,13 @@
                 .then(data => {
                     if (data.status === "success" && data.gcode) {
                         currentGcodeData = data.gcode;
+                        currentDimensions = data.dimensions || {};
                         renderViewButtons();
                         
                         // Automatisch Front laden, wenn vorhanden
                         if (currentGcodeData.front) {
                             updateEditor(currentGcodeData.front);
+                            updateDimensionsInfo(currentDimensions.front);
                             Metro.toast.create("Latest processing loaded.", null, 2000, "success");
                         }
                         
@@ -114,6 +140,15 @@
                         if (data.config) {
                             if(data.config.z_work) el.find('#val_zwork').val(data.config.z_work);
                             if(data.config.feed_rate) el.find('#val_feed').val(data.config.feed_rate);
+                            if(data.config.offset_x) el.find('#val_offset_x').val(data.config.offset_x);
+                            if(data.config.offset_y) el.find('#val_offset_y').val(data.config.offset_y);
+                        }
+
+                        // Dateinamen anzeigen
+                        if (data.filenames) {
+                            if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
+                            if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
+                            if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
                         }
                     }
                 })
@@ -138,6 +173,8 @@
 
                 formData.append("z_work", el.find('#val_zwork').val());
                 formData.append("feed_rate", el.find('#val_feed').val());
+                formData.append("offset_x", el.find('#val_offset_x').val());
+                formData.append("offset_y", el.find('#val_offset_y').val());
 
                 Metro.toast.create("Processing...", null, 2000, "info");
 
@@ -151,10 +188,21 @@
                         Metro.toast.create("Processing successful!", null, 3000, "success");
                         
                         currentGcodeData = data.gcode;
+                        currentDimensions = data.dimensions || {};
                         renderViewButtons();
+                        
+                        // Dateinamen aktualisieren (falls neu hochgeladen)
+                        if (data.filenames) {
+                            if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
+                            if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
+                            if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
+                        }
 
                         // Standardmäßig Front anzeigen
-                        if (data.gcode.front) updateEditor(data.gcode.front);
+                        if (data.gcode.front) {
+                            updateEditor(data.gcode.front);
+                            updateDimensionsInfo(currentDimensions.front);
+                        }
                     } else {
                         Metro.toast.create("Error: " + JSON.stringify(data), null, 5000, "alert");
                     }

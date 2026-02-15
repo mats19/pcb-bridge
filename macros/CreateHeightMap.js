@@ -26,6 +26,9 @@
                     <input type="number" id="pb_py" data-role="input" value="3">
                 </div>
             </div>
+            
+            <div id="probe_stats" class="mt-2 text-small text-muted border p-1" style="display:none;"></div>
+
             <div class="row mt-4">
                 <div class="cell-12">
                     <button class="button primary w-100" id="pb_sim">
@@ -86,6 +89,24 @@
                 };
             }
 
+            function updateStats(points) {
+                var div = el.find('#probe_stats');
+                if (!points || points.length === 0) {
+                    div.hide();
+                    return;
+                }
+                
+                var minZ = Infinity;
+                var maxZ = -Infinity;
+                points.forEach(p => {
+                    if (p.z < minZ) minZ = p.z;
+                    if (p.z > maxZ) maxZ = p.z;
+                });
+                
+                div.html(`<b>Probe Stats:</b> Min Z: ${minZ.toFixed(4)} mm | Max Z: ${maxZ.toFixed(4)} mm | Delta: ${(maxZ - minZ).toFixed(4)} mm`);
+                div.show();
+            }
+
             function loadProbeData(isAutoLoad) {
                 if (!isAutoLoad) Metro.toast.create("Loading data...", null, 1000, "info");
                 
@@ -107,6 +128,9 @@
                         if(data.viz_gcode) {
                             updateEditor(data.viz_gcode);
                         }
+                        
+                        // Stats anzeigen
+                        updateStats(data.points);
                     } else {
                         if (!isAutoLoad) Metro.toast.create("No saved data found.", null, 3000, "warning");
                     }
@@ -134,6 +158,7 @@
                     Metro.toast.create("Simulation complete! " + data.points.length + " points generated.", null, 3000, "success");
                     console.log(data);
                     if (data.viz_gcode) updateEditor(data.viz_gcode);
+                    updateStats(data.points);
                 })
                 .catch(e => {
                     Metro.toast.create("Error: " + e, null, 3000, "alert");
@@ -249,6 +274,7 @@
                             Metro.toast.create("Probing finished! File saved.", null, 3000, "success");
                             console.log(data);
                             if (data.viz_gcode) updateEditor(data.viz_gcode);
+                            updateStats(finalPoints);
                         })
                         .catch(e => {
                             Metro.toast.create("Error: " + e, null, 5000, "alert");

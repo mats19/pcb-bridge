@@ -147,7 +147,9 @@ async def get_latest_process():
     return {
         "status": "success",
         "config": state.get("config"),
-        "gcode": gcode_data
+        "gcode": gcode_data,
+        "dimensions": state.get("dimensions"),
+        "filenames": state.get("filenames")
     }
 
 @app.post("/process/pcb")
@@ -156,7 +158,9 @@ async def process_pcb(
     outline: UploadFile = File(None),
     drill: UploadFile = File(None),
     z_work: float = Form(-0.1),
-    feed_rate: float = Form(200.0)
+    feed_rate: float = Form(200.0),
+    offset_x: float = Form(0.0),
+    offset_y: float = Form(0.0)
 ):
     """
     Nimmt Gerber-Dateien entgegen, ruft pcb2gcode auf und wendet Leveling an.
@@ -168,19 +172,23 @@ async def process_pcb(
     front_path = None
     outline_path = None
     drill_path = None
+    filenames = {}
     
     if front:
         front_path = os.path.join(upload_dir, front.filename)
+        filenames["front"] = front.filename
         with open(front_path, "wb") as buffer:
             shutil.copyfileobj(front.file, buffer)
             
     if outline:
         outline_path = os.path.join(upload_dir, outline.filename)
+        filenames["outline"] = outline.filename
         with open(outline_path, "wb") as buffer:
             shutil.copyfileobj(outline.file, buffer)
             
     if drill:
         drill_path = os.path.join(upload_dir, drill.filename)
+        filenames["drill"] = drill.filename
         with open(drill_path, "wb") as buffer:
             shutil.copyfileobj(drill.file, buffer)
             
@@ -188,23 +196,22 @@ async def process_pcb(
     transformer = PcbTransformer(data_dir=DATA_DIR)
     
     # 1. G-Code generieren
-    config = {"z_work": z_work, "feed_rate": feed_rate}
+    config = {"z_work": z_work, "feed_rate": feed_rate, "offset_x": offset_x, "offset_y": offset_y}
     raw_files = transformer.run_pcb2gcode(front_path, outline_path, drill_path, config)
     
     # 2. Leveling auf alle generierten Dateien anwenden
     leveled_files = {}
     gcode_contents = {}
+    dimensions = {}
     
     for key in ["front", "outline", "drill"]:
         raw_path = raw_files.get(key)
         if raw_path and os.path.exists(raw_path):
-            # Leveling versuchen
-            gcode = transformer.apply_leveling(raw_path)
+            # Processing (Offset + Leveling + Dimensions)
+            gcode, dims = transformer.process_gcode(raw_path, offset_x, offset_y)
             
-            # Fallback: Originaldatei lesen, wenn kein Leveling möglich (z.B. keine Probe-Daten)
-            if gcode is None:
-                with open(raw_path, "r") as f:
-                    gcode = f"; WARNUNG: Kein Leveling angewendet (keine Probe-Daten gefunden)\n" + f.read()
+            if dims:
+                dimensions[key] = dims
             
             # Speichern
             out_path = os.path.join(BASE_DIR, f"pcb_leveled_{key}.gcode")
@@ -217,9 +224,9 @@ async def process_pcb(
     # Status speichern für Reload
     state_file = os.path.join(DATA_DIR, "process_state.json")
     with open(state_file, "w") as f:
-        json.dump({"config": config, "files": leveled_files}, f, indent=2)
+        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames}, f, indent=2)
     
-    return {"status": "success", "files": leveled_files, "gcode": gcode_contents}
+    return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "filenames": filenames}
 
 @app.get("/status")
 async def get_status():

@@ -36,6 +36,9 @@ class PcbTransformer:
         if os.path.exists(self.config_file):
             cmd.extend(["--config", self.config_file])
         
+        # Nullpunkt immer unten links erzwingen
+        cmd.extend(["--zero-start"])
+        
         # Eingabedateien und explizite Outputs
         # Wir setzen explizite Ausgabedateinamen, um Config-Werte zu überschreiben
         if front_gerber:
@@ -70,28 +73,38 @@ class PcbTransformer:
             "drill": os.path.join(output_dir, "pcb_project_drill.gcode")
         }
 
-    def apply_leveling(self, gcode_path):
+    def process_gcode(self, gcode_path, offset_x=0.0, offset_y=0.0):
         """
-        Liest G-Code ein und wendet die Höhenkorrektur basierend auf probe_result.json an.
+        Liest G-Code ein, wendet Offset an, berechnet Dimensionen und wendet Leveling an.
+        Gibt (content, dimensions) zurück.
         """
-        if not os.path.exists(self.probe_file):
-            return None # Keine Probe-Daten vorhanden
+        probe_data = None
+        points = None
+        values = None
+
+        # Probe Daten laden falls vorhanden
+        if os.path.exists(self.probe_file):
+            with open(self.probe_file, 'r') as f:
+                probe_data = json.load(f)
             
-        with open(self.probe_file, 'r') as f:
-            probe_data = json.load(f)
-            
-        # Erstelle Interpolations-Gitter
-        points = np.array([[p['x'], p['y']] for p in probe_data['points']])
-        values = np.array([p['z'] for p in probe_data['points']])
+            # Erstelle Interpolations-Gitter
+            if probe_data and 'points' in probe_data:
+                points = np.array([[p['x'], p['y']] for p in probe_data['points']])
+                values = np.array([p['z'] for p in probe_data['points']])
         
         with open(gcode_path, 'r') as f:
             lines = f.readlines()
             
-        new_lines = ["; Leveling Applied via pcb-bridge"]
+        new_lines = ["; Processed by pcb-bridge (Offset + Leveling)"]
         
         current_x = 0.0
         current_y = 0.0
         
+        min_x, max_x = float('inf'), float('-inf')
+        min_y, max_y = float('inf'), float('-inf')
+        min_z, max_z = float('inf'), float('-inf')
+        has_coords = False
+
         for line in lines:
             line = line.strip()
             if not line or line.startswith(';') or line.startswith('('):
@@ -107,29 +120,57 @@ class PcbTransformer:
             new_parts = []
             
             target_z = None
+            final_z = None
             
             for part in parts:
                 if part.startswith('X'):
-                    current_x = float(part[1:])
+                    # Offset anwenden
+                    val = float(part[1:]) + offset_x
+                    current_x = val
                     has_move = True
-                    new_parts.append(part)
+                    new_parts.append(f"X{val:.4f}")
                 elif part.startswith('Y'):
-                    current_y = float(part[1:])
+                    val = float(part[1:]) + offset_y
+                    current_y = val
                     has_move = True
-                    new_parts.append(part)
+                    new_parts.append(f"Y{val:.4f}")
                 elif part.startswith('Z'):
                     target_z = float(part[1:])
                     # Z wird später modifiziert hinzugefügt
                 else:
                     new_parts.append(part)
             
-            if target_z is not None:
+            # Dimensionen tracken
+            if has_move:
+                has_coords = True
+                if current_x < min_x: min_x = current_x
+                if current_x > max_x: max_x = current_x
+                if current_y < min_y: min_y = current_y
+                if current_y > max_y: max_y = current_y
+
+            if target_z is not None and points is not None:
                 # Interpoliere Z-Offset an aktueller XY Position
                 # method='linear' ist sicher, 'cubic' wäre glatter
                 z_offset = griddata(points, values, (current_x, current_y), method='linear', fill_value=0.0)
                 corrected_z = target_z + float(z_offset)
                 new_parts.append(f"Z{corrected_z:.4f}")
+                final_z = corrected_z
+            elif target_z is not None:
+                new_parts.append(f"Z{target_z:.4f}")
+                final_z = target_z
+            
+            if final_z is not None:
+                if final_z < min_z: min_z = final_z
+                if final_z > max_z: max_z = final_z
                 
             new_lines.append(" ".join(new_parts))
             
-        return "\n".join(new_lines)
+        dims = None
+        if has_coords:
+            # Falls kein Z gefunden wurde (2D), Nullen setzen
+            if min_z == float('inf'): min_z = 0.0
+            if max_z == float('-inf'): max_z = 0.0
+            
+            dims = {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y, "width": max_x - min_x, "height": max_y - min_y, "min_z": min_z, "max_z": max_z}
+            
+        return "\n".join(new_lines), dims
