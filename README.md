@@ -61,8 +61,7 @@ curl -X POST "http://127.0.0.1:8000/process/pcb" \
   -F "feed_rate=200"
 ```
 
-## Roadmap / Nächste Schritte
-1. **Echtes Probing**: Implementierung der G38.2 Schleife im JavaScript-Makro (Kommunikation via Socket).
-2. **Leveling-Mathematik**: Verifizierung der Koordinatensysteme (Maschinen- vs. Arbeitskoordinaten) beim Anwenden der Heightmap.
-3. **Parameter**: Weitere pcb2gcode-Optionen (z.B. Werkzeugdurchmesser) im Frontend konfigurierbar machen.
-4. **Hardware-Tests**: Validierung des Workflows an der echten CNC-Maschine.
+## Roadmap / Next Steps
+1. **Real Probing**: Verification of the G38.2 loop in the JavaScript macro (communication via socket).
+2. **Leveling Math**: Verification of coordinate systems (machine vs. work coordinates) when applying the heightmap.
+3. **Hardware Tests**: Validation of the workflow on the real CNC machine.
