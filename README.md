@@ -19,6 +19,7 @@ Das Projekt verbindet die Web-Oberfl채che von OpenBuilds CONTROL mit leistungsf�
 - **Multi-Layer Support**: Separate Verarbeitung und Visualisierung von Front (Traces), Outline (Cutout) und Drill (Bohrungen).
 - **Auto-Leveling**: Anwendung einer Heightmap auf den G-Code zur Kompensation von Platinen-Unebenheiten.
 - **Offset**: Verschiebung des Nullpunkts (Offset X/Y) direkt bei der Verarbeitung.
+- **Segmentation**: Automatische Unterteilung langer Fahrwege (>1mm) f체r pr채zises Leveling auch bei geraden Leiterbahnen.
 - **Statistiken**: Anzeige von Dimensionen (Bounding Box) und Z-Bereichen f체r jede Datei.
 - **Persistenz**: Speicherung des letzten Verarbeitungszustands und der Probe-Daten.
 
@@ -32,6 +33,9 @@ Das Projekt verbindet die Web-Oberfl채che von OpenBuilds CONTROL mit leistungsf�
 1. Conda Environment: `conda env create -f environment.yml`
 2. Aktiviere Env: `conda activate pcb-bridge`
 3. Starte Backend: `python backend/main.py`
+
+## Konfiguration
+Die Parameter f체r `pcb2gcode` (z.B. Werkzeugdurchmesser, Drehzahlen, Fr채stiefen) werden zentral in der Datei `config/pcb2gcode.conf` gesteuert. Das Backend liest diese Werte aus, um korrekte Werkzeugwechsel-Hinweise in den G-Code einzuf체gen.
 
 ## Ordner
 - /bin: Lokal pcb2gcode ausf체hrbare Dateien ablegen (wird von Git ignoriert)

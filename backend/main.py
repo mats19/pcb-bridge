@@ -152,6 +152,23 @@ async def get_latest_process():
         "filenames": state.get("filenames")
     }
 
+def get_config_value(key, default="?"):
+    """Liest einen Wert aus der pcb2gcode.conf"""
+    try:
+        config_path = os.path.join(os.path.dirname(BASE_DIR), "config", "pcb2gcode.conf")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"): continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        if k.strip() == key:
+                            return v.split("#")[0].strip()
+    except Exception:
+        pass
+    return default
+
 @app.post("/process/pcb")
 async def process_pcb(
     front: UploadFile = File(None),
@@ -167,36 +184,73 @@ async def process_pcb(
     """
     upload_dir = os.path.join(DATA_DIR, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
+    state_file = os.path.join(DATA_DIR, "process_state.json")
+    
+    # Alten Zustand laden, um Pfade wiederzuverwenden, falls keine neuen Dateien hochgeladen werden
+    old_state = {}
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, "r") as f:
+                old_state = json.load(f)
+        except:
+            pass
     
     # Dateien speichern
     front_path = None
     outline_path = None
     drill_path = None
     filenames = {}
+    raw_paths = {} # Neue Struktur für Rohdateipfade
+    
+    # Helper: Pfad aus altem State holen
+    def get_old_raw(key):
+        return old_state.get("raw_paths", {}).get(key)
+    def get_old_name(key):
+        return old_state.get("filenames", {}).get(key)
     
     if front:
         front_path = os.path.join(upload_dir, front.filename)
         filenames["front"] = front.filename
+        raw_paths["front"] = front_path
         with open(front_path, "wb") as buffer:
             shutil.copyfileobj(front.file, buffer)
+    elif get_old_raw("front") and os.path.exists(get_old_raw("front")):
+        front_path = get_old_raw("front")
+        filenames["front"] = get_old_name("front")
+        raw_paths["front"] = front_path
             
     if outline:
         outline_path = os.path.join(upload_dir, outline.filename)
         filenames["outline"] = outline.filename
+        raw_paths["outline"] = outline_path
         with open(outline_path, "wb") as buffer:
             shutil.copyfileobj(outline.file, buffer)
+    elif get_old_raw("outline") and os.path.exists(get_old_raw("outline")):
+        outline_path = get_old_raw("outline")
+        filenames["outline"] = get_old_name("outline")
+        raw_paths["outline"] = outline_path
             
     if drill:
         drill_path = os.path.join(upload_dir, drill.filename)
         filenames["drill"] = drill.filename
+        raw_paths["drill"] = drill_path
         with open(drill_path, "wb") as buffer:
             shutil.copyfileobj(drill.file, buffer)
+    elif get_old_raw("drill") and os.path.exists(get_old_raw("drill")):
+        drill_path = get_old_raw("drill")
+        filenames["drill"] = get_old_name("drill")
+        raw_paths["drill"] = drill_path
             
     # Transformer initialisieren
     transformer = PcbTransformer(data_dir=DATA_DIR)
     
     # 1. G-Code generieren
-    config = {"z_work": z_work, "feed_rate": feed_rate, "offset_x": offset_x, "offset_y": offset_y}
+    config = {
+        "z_work": z_work, 
+        "feed_rate": feed_rate, 
+        "offset_x": offset_x, 
+        "offset_y": offset_y
+    }
     raw_files = transformer.run_pcb2gcode(front_path, outline_path, drill_path, config)
     
     # 2. Leveling auf alle generierten Dateien anwenden
@@ -213,6 +267,19 @@ async def process_pcb(
             if dims:
                 dimensions[key] = dims
             
+            # Header Injection: Werkzeugwechsel-Hinweis einfügen
+            # pcb2gcode macht das bei Drills automatisch, aber oft nicht bei Front/Outline
+            header = ""
+            if key == "front":
+                dia = get_config_value("mill-diameters", "unknown")
+                header = f"(MSG, Please insert Trace Isolation Tool: {dia})\nM0\n"
+            elif key == "outline":
+                dia = get_config_value("cutter-diameter", "unknown")
+                header = f"(MSG, Please insert Outline Cutter: {dia})\nM0\n"
+            
+            if header:
+                gcode = header + gcode
+            
             # Speichern
             out_path = os.path.join(BASE_DIR, f"pcb_leveled_{key}.gcode")
             with open(out_path, "w") as f:
@@ -222,9 +289,8 @@ async def process_pcb(
             gcode_contents[key] = gcode
 
     # Status speichern für Reload
-    state_file = os.path.join(DATA_DIR, "process_state.json")
     with open(state_file, "w") as f:
-        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames}, f, indent=2)
+        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames, "raw_paths": raw_paths}, f, indent=2)
     
     return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "filenames": filenames}
 
