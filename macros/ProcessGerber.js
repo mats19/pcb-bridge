@@ -4,7 +4,10 @@
 (function() {
     var content = `
         <div class="p-2">
-            <h5>Gerber Processing & Leveling</h5>
+            <div class="d-flex flex-justify-between flex-align-center">
+                <h5>Gerber Processing</h5>
+                <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
+            </div>
             <hr>
             <form id="gerberForm">
                 <div class="mb-2">
@@ -160,7 +163,55 @@
             // Beim Start versuchen, alte Daten zu laden
             loadLatestData();
 
+            // Reset Button
+            el.find('#btn_reset').on('click', function() {
+                fetch('http://127.0.0.1:8000/process/reset', { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    Metro.toast.create("Reset successful.", null, 1000, "info");
+                    
+                    // 1. Visuelle Elemente sofort verstecken/leeren
+                    el.find('#result_area').hide();
+                    el.find('#view_buttons').html('');
+                    el.find('#dimensions_info').html('');
+                    el.find('#lbl_front').text("");
+                    el.find('#lbl_outline').text("");
+                    el.find('#lbl_drill').text("");
+                    
+                    // 2. Interne Daten löschen
+                    currentGcodeData = { front: null, outline: null, drill: null };
+                    currentDimensions = { front: null, outline: null, drill: null };
+                    
+                    // 3. Editor leeren
+                    if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
+                    if (typeof parseGcodeInWebWorker === "function") parseGcodeInWebWorker("");
+                    if (typeof resetView === "function") resetView();
+
+                    // 4. Formular und Inputs zurücksetzen (Robustheit erhöht)
+                    try {
+                        el.find('#gerberForm')[0].reset();
+                        ['#file_front', '#file_outline', '#file_drill'].forEach(id => {
+                            var input = el.find(id);
+                            input.val('');
+                            var instance = Metro.getPlugin(input[0], 'file');
+                            if(instance) instance.clear();
+                        });
+                    } catch(e) {
+                        console.warn("Form reset warning:", e);
+                    }
+                });
+            });
+
             el.find('#btn_process').on('click', function() {
+                var btn = $(this);
+                // Schließen-Button im Dialog-Wrapper finden und sperren
+                var closeBtn = el.closest('.dialog, .window').find('.js-dialog-close');
+                
+                btn.prop('disabled', true);
+                var originalText = btn.html();
+                btn.html('<span class="mif-spinner4 ani-spin"></span> Processing...');
+                closeBtn.addClass('disabled').css('pointer-events', 'none');
+
                 var formData = new FormData();
                 
                 var fFront = el.find('#file_front')[0].files[0];
@@ -176,7 +227,7 @@
                 formData.append("offset_x", el.find('#val_offset_x').val());
                 formData.append("offset_y", el.find('#val_offset_y').val());
 
-                Metro.toast.create("Processing...", null, 2000, "info");
+                Metro.toast.create("Processing started. Please wait...", null, 2000, "info");
 
                 fetch('http://127.0.0.1:8000/process/pcb', {
                     method: 'POST',
@@ -209,6 +260,12 @@
                 })
                 .catch(e => {
                     Metro.toast.create("Backend Error: " + e, null, 3000, "alert");
+                })
+                .finally(() => {
+                    // UI wieder freigeben
+                    btn.prop('disabled', false);
+                    btn.html(originalText);
+                    closeBtn.removeClass('disabled').css('pointer-events', 'auto');
                 });
             });
         }

@@ -4,7 +4,10 @@
 (function() {
     var content = `
         <div class="p-2">
-            <h5>Probe Grid Configuration</h5>
+            <div class="d-flex flex-justify-between flex-align-center">
+                <h5>Probe Grid Configuration</h5>
+                <button class="button small warning outline" id="pb_reset" title="Reset Data"><span class="mif-bin"></span> Reset</button>
+            </div>
             <hr>
             <div class="row mb-2">
                 <div class="cell-6">
@@ -142,6 +145,26 @@
 
             // Automatisch laden beim Öffnen
             loadProbeData(true);
+
+            // Reset Button
+            el.find('#pb_reset').on('click', function() {
+                fetch('http://127.0.0.1:8000/probe/reset', { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    Metro.toast.create("Probe data reset.", null, 1000, "info");
+                    
+                    // UI auf Defaults zurücksetzen
+                    el.find('#pb_width').val(50);
+                    el.find('#pb_height').val(30);
+                    el.find('#pb_px').val(5);
+                    el.find('#pb_py').val(3);
+                    el.find('#probe_stats').hide();
+                    
+                    // Editor leeren
+                    if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
+                    if (typeof parseGcodeInWebWorker === "function") parseGcodeInWebWorker("");
+                });
+            });
 
             el.find('#pb_sim').on('click', function() {
                 var payload = getPayload();

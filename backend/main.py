@@ -114,6 +114,22 @@ async def get_latest_probe_result():
         "viz_gcode": viz
     }
 
+@app.delete("/probe/reset")
+async def reset_probe_data():
+    """Löscht die gespeicherten Probe-Daten."""
+    file_path = os.path.join(DATA_DIR, "probe_result.json")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    return {"status": "success", "message": "Probe data cleared"}
+
+@app.delete("/process/reset")
+async def reset_process_data():
+    """Löscht den Verarbeitungsstatus."""
+    state_file = os.path.join(DATA_DIR, "process_state.json")
+    if os.path.exists(state_file):
+        os.remove(state_file)
+    return {"status": "success", "message": "Process state cleared"}
+
 @app.on_event("startup")
 async def startup_event():
     file_path = os.path.join(DATA_DIR, "probe_result.json")
@@ -208,6 +224,14 @@ async def process_pcb(
     def get_old_name(key):
         return old_state.get("filenames", {}).get(key)
     
+    # Validierung: Prüfen, ob überhaupt Eingabedaten vorhanden sind
+    has_front = front is not None or (get_old_raw("front") and os.path.exists(get_old_raw("front")))
+    has_outline = outline is not None or (get_old_raw("outline") and os.path.exists(get_old_raw("outline")))
+    has_drill = drill is not None or (get_old_raw("drill") and os.path.exists(get_old_raw("drill")))
+    
+    if not (has_front or has_outline or has_drill):
+        return {"status": "error", "message": "No input files provided and no previous state found. Please upload Gerber files."}
+
     if front:
         front_path = os.path.join(upload_dir, front.filename)
         filenames["front"] = front.filename

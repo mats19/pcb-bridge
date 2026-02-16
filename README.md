@@ -3,7 +3,7 @@ Integration of pcb2gcode and Height-Map-Compensation for OpenBuilds CONTROL.
 
 **STATUS: EXPERIMENTAL / IN DEVELOPMENT. UNTESTED ON REAL HARDWARE.**
 **USE AT YOUR OWN RISK.**
-
+**Tested on macOS and Windows 10/11.**
 **Developed with support from Google Gemini.**
 
 ## Architecture
@@ -25,6 +25,8 @@ This project bridges the web interface of OpenBuilds CONTROL with powerful Pytho
 - **Segmentation**: Automatic subdivision of long moves (>1mm) for precise leveling even on straight traces.
 - **Statistics**: Display of dimensions (Bounding Box) and Z-ranges for each file.
 - **Persistence**: Storage of the last processing state and probe data.
+- **State Management**: Reset functionality to clear previous data and start fresh.
+- **UI Safety**: Visual feedback and UI locking during long processing tasks to prevent accidental cancellation.
 
 ## Components
 - **FastAPI**: Python web framework for the API.
@@ -44,10 +46,12 @@ This project bridges the web interface of OpenBuilds CONTROL with powerful Pytho
 4. **pcb2gcode**:
    - Download the Windows ZIP from GitHub Releases.
    - Extract `pcb2gcode.exe` (and all included DLLs) into the `/bin` folder of this project.
+   - *Note:* The backend automatically detects `pcb2gcode.exe`, `pcb2gcode.bat`, or `pcb2gcode.cmd` in the `/bin` folder.
 5. Start Backend: `python backend/main.py`
 
 ## Configuration
 Parameters for `pcb2gcode` (e.g., tool diameters, speeds, milling depths) are controlled centrally in the `config/pcb2gcode.conf` file. The backend reads these values to inject correct tool change prompts into the G-code.
+**Note:** The backend manually parses this config file to ensure compatibility with older `pcb2gcode` versions (e.g., v2.4) that do not support the `--config` flag.
 
 ## Folders
 - `/bin`: Place local `pcb2gcode` executables here (ignored by Git).

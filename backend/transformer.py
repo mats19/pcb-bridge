@@ -15,8 +15,17 @@ class PcbTransformer:
         self.data_dir = data_dir if data_dir else os.path.join(base_dir, "data")
         self.probe_file = os.path.join(data_dir, "probe_result.json")
         
-        exe_name = "pcb2gcode.exe" if platform.system() == "Windows" else "pcb2gcode"
-        self.pcb2gcode_bin = os.path.join(project_root, "bin", exe_name)
+        if platform.system() == "Windows":
+            # Windows: Prüfe auf .bat/.cmd Wrapper, falls vorhanden, sonst .exe
+            self.pcb2gcode_bin = os.path.join(project_root, "bin", "pcb2gcode.exe") # Default Fallback
+            for ext in ["bat", "cmd", "exe"]:
+                candidate = os.path.join(project_root, "bin", f"pcb2gcode.{ext}")
+                if os.path.exists(candidate):
+                    self.pcb2gcode_bin = candidate
+                    break
+        else:
+            self.pcb2gcode_bin = os.path.join(project_root, "bin", "pcb2gcode")
+            
         self.config_file = os.path.join(project_root, "config", "pcb2gcode.conf")
 
     def run_pcb2gcode(self, front_gerber, outline_gerber, drill_gerber, config):
@@ -32,12 +41,47 @@ class PcbTransformer:
         else:
             cmd = ["pcb2gcode"] # Fallback auf System-PATH
             
-        # Config-Datei laden
-        if os.path.exists(self.config_file):
-            cmd.extend(["--config", self.config_file])
+        # Parameter sammeln (Dict um Duplikate zu vermeiden)
+        params = {}
+        flags = set()
         
-        # Nullpunkt immer unten links erzwingen
-        cmd.extend(["--zero-start"])
+        # 1. Config-Datei laden
+        if os.path.exists(self.config_file):
+            with open(self.config_file, 'r') as f:
+                for line in f:
+                    line = line.split('#')[0].strip()
+                    if not line: continue
+                    
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        params[k.strip()] = v.strip()
+                    else:
+                        flags.add(line)
+
+        # 2. Ignorierte Keys entfernen (Input/Output wird manuell gesetzt)
+        ignore_keys = {"front", "back", "outline", "drill", "front-output", "back-output", "outline-output", "drill-output", "output-dir"}
+        for k in ignore_keys:
+            params.pop(k, None)
+            
+        # 3. Parameter aus Frontend/Config anwenden (überschreibt File)
+        params["zwork"] = str(config.get("z_work", -0.1))
+        params["mill-feed"] = str(config.get("feed_rate", 200))
+        
+        # 4. Defaults setzen, falls nicht im File vorhanden
+        if "zsafe" not in params:
+            params["zsafe"] = str(config.get("z_safe", 2.0))
+        if "mill-speed" not in params:
+            params["mill-speed"] = str(config.get("spindle_speed", 12000))
+            
+        # 5. Flags erzwingen
+        flags.add("zero-start")
+        
+        # 6. Befehl zusammenbauen
+        for k, v in params.items():
+            cmd.extend([f"--{k}", v])
+            
+        for f in flags:
+            cmd.append(f"--{f}")
         
         # Eingabedateien und explizite Outputs
         # Wir setzen explizite Ausgabedateinamen, um Config-Werte zu überschreiben
@@ -53,12 +97,6 @@ class PcbTransformer:
             
         # Output Konfiguration
         cmd.extend(["--output-dir", output_dir])
-        
-        # Parameter aus Config (Beispiele)
-        cmd.extend(["--zwork", str(config.get("z_work", -0.1))])
-        cmd.extend(["--zsafe", str(config.get("z_safe", 2.0))])
-        cmd.extend(["--mill-feed", str(config.get("feed_rate", 200))])
-        cmd.extend(["--mill-speed", str(config.get("spindle_speed", 12000))])
         
         # Prozess ausführen
         try:
