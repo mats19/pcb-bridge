@@ -63,17 +63,7 @@ class PcbTransformer:
         for k in ignore_keys:
             params.pop(k, None)
             
-        # 3. Apply parameters from Frontend/Config (overwrites file)
-        params["zwork"] = str(config.get("z_work", -0.1))
-        params["mill-feed"] = str(config.get("feed_rate", 200))
-        
-        # 4. Set defaults if not present in file
-        if "zsafe" not in params:
-            params["zsafe"] = str(config.get("z_safe", 2.0))
-        if "mill-speed" not in params:
-            params["mill-speed"] = str(config.get("spindle_speed", 12000))
-            
-        # 5. Force flags
+        # 3. Force flags
         flags.add("zero-start")
         
         # 6. Assemble command

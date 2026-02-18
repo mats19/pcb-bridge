@@ -190,8 +190,6 @@ async def process_pcb(
     front: UploadFile = File(None),
     outline: UploadFile = File(None),
     drill: UploadFile = File(None),
-    z_work: float = Form(-0.1),
-    feed_rate: float = Form(200.0),
     offset_x: float = Form(0.0),
     offset_y: float = Form(0.0)
 ):
@@ -272,8 +270,6 @@ async def process_pcb(
     
     # 1. Generate G-code
     config = {
-        "z_work": z_work, 
-        "feed_rate": feed_rate, 
         "offset_x": offset_x, 
         "offset_y": offset_y
     }

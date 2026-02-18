@@ -4,11 +4,6 @@
 (function() {
     var content = `
         <div class="p-2">
-            <div class="d-flex flex-justify-between flex-align-center">
-                <h5>Gerber Processing</h5>
-                <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
-            </div>
-            <hr>
             <form id="gerberForm">
                 <div class="mb-2">
                     <label>Front Copper (Gerber) <span id="lbl_front" class="text-muted text-small"></span></label>
@@ -24,16 +19,6 @@
                 </div>
                 <div class="row mb-2">
                     <div class="cell-6">
-                        <label>Milling Depth (Z-Work)</label>
-                        <input type="number" id="val_zwork" value="-0.1" step="0.05" data-role="input">
-                    </div>
-                    <div class="cell-6">
-                        <label>Feed Rate</label>
-                        <input type="number" id="val_feed" value="200" data-role="input">
-                    </div>
-                </div>
-                <div class="row mb-2">
-                    <div class="cell-6">
                         <label>Offset X [mm]</label>
                         <input type="number" id="val_offset_x" value="0" data-role="input">
                     </div>
@@ -44,15 +29,14 @@
                 </div>
             </form>
             
-            <div id="result_area" style="display:none;" class="mt-2 border p-2">
-                <h6>Show Result:</h6>
-                <div id="dimensions_info" class="text-small mb-2 text-muted"></div>
-                <div class="row">
-                    <div class="cell-12" id="view_buttons"></div>
-                </div>
+            <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
+                <div id="dimensions_info" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
+                <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
             </div>
 
-            <div class="mt-4">
+            <div class="d-flex flex-row w-100 mb-2" id="view_buttons" style="display:none; gap: 5px;"></div>
+
+            <div class="mt-2">
                 <button class="button success w-100" id="btn_process">
                     <span class="mif-cogs"></span> Process & Level
                 </button>
@@ -61,7 +45,7 @@
     `;
 
     Metro.dialog.create({
-        title: "PCB Bridge - Gerber",
+        title: "PCB Bridge - Gerber Processing",
         content: content,
         width: 500,
         actions: [{ caption: "Close", cls: "js-dialog-close" }],
@@ -91,18 +75,20 @@
             function updateDimensionsInfo(dims) {
                 var div = el.find('#dimensions_info');
                 if (dims) {
-                    div.html(`<b>Dimensions:</b> ${dims.width.toFixed(2)} x ${dims.height.toFixed(2)} mm <br> 
+                    div.html(`<b>Leveling Stats:</b> ${dims.width.toFixed(2)} x ${dims.height.toFixed(2)} mm <br> 
                               <b>Range:</b> X: ${dims.min_x.toFixed(2)}..${dims.max_x.toFixed(2)} / Y: ${dims.min_y.toFixed(2)}..${dims.max_y.toFixed(2)} <br>
                               <b>Z-Range (Final):</b> ${dims.min_z.toFixed(3)} .. ${dims.max_z.toFixed(3)} mm`);
+                    div.show();
                 } else {
                     div.html('');
+                    div.hide();
                 }
             }
 
             function renderViewButtons() {
                 var container = el.find('#view_buttons');
                 container.html('');
-                el.find('#result_area').show();
+                container.show();
 
                 var map = {
                     'front': { label: 'Front (Traces)', icon: 'mif-flow-line', cls: 'primary' },
@@ -112,7 +98,7 @@
 
                 Object.keys(currentGcodeData).forEach(key => {
                     if (currentGcodeData[key]) {
-                        var btn = $(`<button class="button small ${map[key].cls} mr-1"><span class="${map[key].icon}"></span> ${map[key].label}</button>`);
+                        var btn = $(`<button class="button small ${map[key].cls} flex-fill"><span class="${map[key].icon}"></span> ${map[key].label}</button>`);
                         btn.on('click', function() {
                             updateEditor(currentGcodeData[key]);
                             updateDimensionsInfo(currentDimensions[key]);
@@ -141,8 +127,6 @@
                         
                         // Restore form values (optional)
                         if (data.config) {
-                            if(data.config.z_work) el.find('#val_zwork').val(data.config.z_work);
-                            if(data.config.feed_rate) el.find('#val_feed').val(data.config.feed_rate);
                             if(data.config.offset_x) el.find('#val_offset_x').val(data.config.offset_x);
                             if(data.config.offset_y) el.find('#val_offset_y').val(data.config.offset_y);
                         }
@@ -171,9 +155,8 @@
                     Metro.toast.create("Reset successful.", null, 1000, "info");
                     
                     // 1. Immediately hide/clear visual elements
-                    el.find('#result_area').hide();
-                    el.find('#view_buttons').html('');
-                    el.find('#dimensions_info').html('');
+                    el.find('#view_buttons').html('').hide();
+                    el.find('#dimensions_info').html('').hide();
                     el.find('#lbl_front').text("");
                     el.find('#lbl_outline').text("");
                     el.find('#lbl_drill').text("");
@@ -222,8 +205,6 @@
                 if(fOutline) formData.append("outline", fOutline);
                 if(fDrill) formData.append("drill", fDrill);
 
-                formData.append("z_work", el.find('#val_zwork').val());
-                formData.append("feed_rate", el.find('#val_feed').val());
                 formData.append("offset_x", el.find('#val_offset_x').val());
                 formData.append("offset_y", el.find('#val_offset_y').val());
 

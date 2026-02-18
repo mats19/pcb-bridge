@@ -4,11 +4,6 @@
 (function() {
     var content = `
         <div class="p-2">
-            <div class="d-flex flex-justify-between flex-align-center">
-                <h5>Probe Grid Configuration</h5>
-                <button class="button small warning outline" id="pb_reset" title="Reset Data"><span class="mif-bin"></span> Reset</button>
-            </div>
-            <hr>
             <div class="row mb-2">
                 <div class="cell-6">
                     <label>Size X [mm]</label>
@@ -30,15 +25,20 @@
                 </div>
             </div>
             
-            <div id="probe_stats" class="mt-2 text-small text-muted border p-1" style="display:none;"></div>
+            <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
+                <div id="probe_stats" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
+                <button class="button small warning outline" id="pb_reset" title="Reset Data"><span class="mif-bin"></span> Reset</button>
+            </div>
 
-            <div class="row mt-4">
-                <div class="cell-12">
+            <div class="row">
+                <div class="cell-6">
                     <button class="button primary w-100" id="pb_sim">
-                        <span class="mif-magic-wand"></span> Simulation (Generate Test Data)
+                        <span class="mif-magic-wand"></span> Simulation
                     </button>
-                    <button class="button alert w-100 mt-2" id="pb_probe">
-                        <span class="mif-target"></span> Start Probing (Real)
+                </div>
+                <div class="cell-6">
+                    <button class="button alert w-100" id="pb_probe">
+                        <span class="mif-target"></span> Probing
                     </button>
                 </div>
             </div>
@@ -46,7 +46,7 @@
     `;
 
     Metro.dialog.create({
-        title: "PCB Bridge",
+        title: "PCB Bridge - Probe Grid",
         content: content,
         width: 450,
         actions: [
