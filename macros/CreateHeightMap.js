@@ -1,5 +1,5 @@
-// Makro für OpenBuilds CONTROL
-// Erstellt einen Dialog zur Eingabe der PCB-Dimensionen und sendet diese an das Python-Backend
+// Macro for OpenBuilds CONTROL
+// Creates a dialog to input PCB dimensions and sends them to the Python backend
 
 (function() {
     var content = `
@@ -59,19 +59,19 @@
             var el = dialog.element;
             
             function updateEditor(gCode) {
-                // 1. Code in den Editor schreiben
+                // 1. Write code to editor
                 if (typeof editor !== 'undefined' && editor.session) {
                     editor.session.setValue(gCode);
                     if (typeof printLog === "function") printLog("Editor content updated.");
                 }
 
-                // 2. Den 3D-Viewer aktualisieren
+                // 2. Update 3D viewer
                 if (typeof parseGcodeInWebWorker === "function") {
                     parseGcodeInWebWorker(editor.getValue());
                     if (typeof printLog === "function") printLog("3D View refresh triggered.");
                 }
 
-                // 3. Viewport zentrieren
+                // 3. Center viewport
                 if (typeof resetView === "function") resetView();
             }
 
@@ -119,7 +119,7 @@
                     if(data.status === "success") {
                         if (!isAutoLoad) Metro.toast.create("Loaded! " + data.points.length + " points.", null, 3000, "success");
                         
-                        // Config Felder updaten, falls vorhanden
+                        // Update config fields if available
                         if(data.config) {
                             el.find('#pb_width').val(data.config.width);
                             el.find('#pb_height').val(data.config.height);
@@ -127,12 +127,12 @@
                             el.find('#pb_py').val(data.config.points_y);
                         }
 
-                        // Visualisierung anzeigen
+                        // Show visualization
                         if(data.viz_gcode) {
                             updateEditor(data.viz_gcode);
                         }
                         
-                        // Stats anzeigen
+                        // Show stats
                         updateStats(data.points);
                     } else {
                         if (!isAutoLoad) Metro.toast.create("No saved data found.", null, 3000, "warning");
@@ -143,7 +143,7 @@
                 });
             }
 
-            // Automatisch laden beim Öffnen
+            // Automatically load on open
             loadProbeData(true);
 
             // Reset Button
@@ -153,14 +153,14 @@
                 .then(data => {
                     Metro.toast.create("Probe data reset.", null, 1000, "info");
                     
-                    // UI auf Defaults zurücksetzen
+                    // Reset UI to defaults
                     el.find('#pb_width').val(50);
                     el.find('#pb_height').val(30);
                     el.find('#pb_px').val(5);
                     el.find('#pb_py').val(3);
                     el.find('#probe_stats').hide();
                     
-                    // Editor leeren
+                    // Clear editor
                     if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
                     if (typeof parseGcodeInWebWorker === "function") parseGcodeInWebWorker("");
                 });
@@ -192,23 +192,23 @@
                 var payload = getPayload();
                 if(!payload) return;
 
-                // Hier würde die echte Logik stehen:
-                // 1. Loop über x/y Koordinaten (in JS berechnet)
+                // Real probing logic implementation:
+                // 1. Loop over x/y coordinates (calculated in JS)
                 // 2. socket.emit('run', 'G0 X... Y...')
                 // 3. socket.emit('run', 'G38.2 Z-5 F100')
-                // 4. Warten auf socket message mit "[PRB:x,y,z:state]"
-                // 5. Daten sammeln und am Ende an /probe/save senden
+                // 4. Wait for socket message with "[PRB:x,y,z:state]"
+                // 5. Collect data and send to /probe/save at the end
                 if (payload.points_x < 2 || payload.points_y < 2) {
                     Metro.toast.create("Please specify at least 2 points per axis.", null, 3000, "alert");
                     return;
                 }
 
-                // Konfiguration
-                var zSafe = 2.0;       // Rückzugshöhe [mm]
-                var zProbeMin = -2.0;  // Maximale Tiefe [mm]
-                var feed = 100;        // Probing Geschwindigkeit [mm/min]
+                // Configuration
+                var zSafe = 2.0;       // Retract height [mm]
+                var zProbeMin = -2.0;  // Max depth [mm]
+                var feed = 100;        // Probing feed rate [mm/min]
 
-                // Punkte generieren
+                // Generate points
                 var points = [];
                 var stepX = payload.width / (payload.points_x - 1);
                 var stepY = payload.height / (payload.points_y - 1);
@@ -227,11 +227,10 @@
                 var probingActive = true;
                 var btn = $(this);
                 
-                Metro.toast.create("Probing logic needs to be implemented (see code comments)", null, 5000, "info");
                 btn.prop('disabled', true);
-                Metro.toast.create("Probing started...", null, 2000, "info");
+                Metro.toast.create("Experimental Probing started...", null, 2000, "info");
 
-                // Serial Listener für [PRB:...] Antworten
+                // Serial listener for [PRB:...] responses
                 var onSerial = function(data) {
                     if (!probingActive) return;
                     
@@ -277,7 +276,7 @@
                     btn.prop('disabled', false);
 
                     if (results.length > 0) {
-                        // Normalisierung: Z relativ zum ersten Punkt (0,0)
+                        // Normalization: Z relative to the first point (0,0)
                         var refZ = results[0].z_raw;
                         var finalPoints = results.map(p => ({
                             x: p.x,
@@ -305,7 +304,7 @@
                     }
                 }
 
-                // Start: Zuerst auf Safe Height, dann erster Punkt
+                // Start: First move to Safe Height, then first point
                 socket.emit('run', 'G0 Z' + zSafe);
                 setTimeout(nextPoint, 500);
             });

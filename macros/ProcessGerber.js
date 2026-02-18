@@ -1,5 +1,5 @@
-// Makro für OpenBuilds CONTROL
-// Upload von Gerber-Dateien, Verarbeitung via pcb2gcode und Leveling
+// Macro for OpenBuilds CONTROL
+// Upload of Gerber files, processing via pcb2gcode, and leveling
 
 (function() {
     var content = `
@@ -67,24 +67,24 @@
         actions: [{ caption: "Close", cls: "js-dialog-close" }],
         onShow: function(dialog) {
             var el = dialog.element;
-            // Speicher für die geladenen G-Codes
+            // Storage for loaded G-codes
             var currentGcodeData = { front: null, outline: null, drill: null };
             var currentDimensions = { front: null, outline: null, drill: null };
 
             function updateEditor(gCode) {
-                // 1. Code in den Editor schreiben
+                // 1. Write code to editor
                 if (typeof editor !== 'undefined' && editor.session) {
                     editor.session.setValue(gCode);
                     if (typeof printLog === "function") printLog("Editor content updated.");
                 }
 
-                // 2. Den 3D-Viewer aktualisieren
+                // 2. Update 3D viewer
                 if (typeof parseGcodeInWebWorker === "function") {
                     parseGcodeInWebWorker(editor.getValue());
                     if (typeof printLog === "function") printLog("3D View refresh triggered.");
                 }
 
-                // 3. Viewport zentrieren
+                // 3. Center viewport
                 if (typeof resetView === "function") resetView();
             }
 
@@ -132,14 +132,14 @@
                         currentDimensions = data.dimensions || {};
                         renderViewButtons();
                         
-                        // Automatisch Front laden, wenn vorhanden
+                        // Automatically load Front if available
                         if (currentGcodeData.front) {
                             updateEditor(currentGcodeData.front);
                             updateDimensionsInfo(currentDimensions.front);
                             Metro.toast.create("Latest processing loaded.", null, 2000, "success");
                         }
                         
-                        // Formularwerte wiederherstellen (optional)
+                        // Restore form values (optional)
                         if (data.config) {
                             if(data.config.z_work) el.find('#val_zwork').val(data.config.z_work);
                             if(data.config.feed_rate) el.find('#val_feed').val(data.config.feed_rate);
@@ -147,7 +147,7 @@
                             if(data.config.offset_y) el.find('#val_offset_y').val(data.config.offset_y);
                         }
 
-                        // Dateinamen anzeigen
+                        // Display filenames
                         if (data.filenames) {
                             if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
                             if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
@@ -160,7 +160,7 @@
                 });
             }
 
-            // Beim Start versuchen, alte Daten zu laden
+            // Try to load old data on startup
             loadLatestData();
 
             // Reset Button
@@ -170,7 +170,7 @@
                 .then(data => {
                     Metro.toast.create("Reset successful.", null, 1000, "info");
                     
-                    // 1. Visuelle Elemente sofort verstecken/leeren
+                    // 1. Immediately hide/clear visual elements
                     el.find('#result_area').hide();
                     el.find('#view_buttons').html('');
                     el.find('#dimensions_info').html('');
@@ -178,16 +178,16 @@
                     el.find('#lbl_outline').text("");
                     el.find('#lbl_drill').text("");
                     
-                    // 2. Interne Daten löschen
+                    // 2. Clear internal data
                     currentGcodeData = { front: null, outline: null, drill: null };
                     currentDimensions = { front: null, outline: null, drill: null };
                     
-                    // 3. Editor leeren
+                    // 3. Clear editor
                     if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
                     if (typeof parseGcodeInWebWorker === "function") parseGcodeInWebWorker("");
                     if (typeof resetView === "function") resetView();
 
-                    // 4. Formular und Inputs zurücksetzen (Robustheit erhöht)
+                    // 4. Reset form and inputs (increased robustness)
                     try {
                         el.find('#gerberForm')[0].reset();
                         ['#file_front', '#file_outline', '#file_drill'].forEach(id => {
@@ -204,7 +204,7 @@
 
             el.find('#btn_process').on('click', function() {
                 var btn = $(this);
-                // Schließen-Button im Dialog-Wrapper finden und sperren
+                // Find and lock close button in dialog wrapper
                 var closeBtn = el.closest('.dialog, .window').find('.js-dialog-close');
                 
                 btn.prop('disabled', true);
@@ -242,14 +242,14 @@
                         currentDimensions = data.dimensions || {};
                         renderViewButtons();
                         
-                        // Dateinamen aktualisieren (falls neu hochgeladen)
+                        // Update filenames (if newly uploaded)
                         if (data.filenames) {
                             if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
                             if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
                             if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
                         }
 
-                        // Standardmäßig Front anzeigen
+                        // Show Front by default
                         if (data.gcode.front) {
                             updateEditor(data.gcode.front);
                             updateDimensionsInfo(currentDimensions.front);
@@ -262,7 +262,7 @@
                     Metro.toast.create("Backend Error: " + e, null, 3000, "alert");
                 })
                 .finally(() => {
-                    // UI wieder freigeben
+                    // Unlock UI
                     btn.prop('disabled', false);
                     btn.html(originalText);
                     closeBtn.removeClass('disabled').css('pointer-events', 'auto');

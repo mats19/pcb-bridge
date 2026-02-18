@@ -7,8 +7,8 @@ import platform
 
 class PcbTransformer:
     def __init__(self, data_dir=None):
-        # Pfade bestimmen (relativ zum Projekt-Root)
-        # transformer.py liegt in backend/, also gehen wir eine Ebene hoch
+        # Determine paths (relative to project root)
+        # transformer.py is in backend/, so we go one level up
         base_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(base_dir)
         
@@ -16,7 +16,7 @@ class PcbTransformer:
         self.probe_file = os.path.join(data_dir, "probe_result.json")
         
         if platform.system() == "Windows":
-            # Windows: Prüfe auf .bat/.cmd Wrapper, falls vorhanden, sonst .exe
+            # Windows: Check for .bat/.cmd wrapper if available, else .exe
             self.pcb2gcode_bin = os.path.join(project_root, "bin", "pcb2gcode.exe") # Default Fallback
             for ext in ["bat", "cmd", "exe"]:
                 candidate = os.path.join(project_root, "bin", f"pcb2gcode.{ext}")
@@ -30,22 +30,22 @@ class PcbTransformer:
 
     def run_pcb2gcode(self, front_gerber, outline_gerber, drill_gerber, config):
         """
-        Ruft pcb2gcode als Subprozess auf.
+        Calls pcb2gcode as a subprocess.
         """
         output_dir = os.path.join(self.data_dir, "gcode_raw")
         os.makedirs(output_dir, exist_ok=True)
         
-        # Basis-Kommando
+        # Base command
         if os.path.exists(self.pcb2gcode_bin):
             cmd = [self.pcb2gcode_bin]
         else:
-            cmd = ["pcb2gcode"] # Fallback auf System-PATH
+            cmd = ["pcb2gcode"] # Fallback to System PATH
             
-        # Parameter sammeln (Dict um Duplikate zu vermeiden)
+        # Collect parameters (Dict to avoid duplicates)
         params = {}
         flags = set()
         
-        # 1. Config-Datei laden
+        # 1. Load config file
         if os.path.exists(self.config_file):
             with open(self.config_file, 'r') as f:
                 for line in f:
@@ -58,33 +58,33 @@ class PcbTransformer:
                     else:
                         flags.add(line)
 
-        # 2. Ignorierte Keys entfernen (Input/Output wird manuell gesetzt)
+        # 2. Remove ignored keys (Input/Output is set manually)
         ignore_keys = {"front", "back", "outline", "drill", "front-output", "back-output", "outline-output", "drill-output", "output-dir"}
         for k in ignore_keys:
             params.pop(k, None)
             
-        # 3. Parameter aus Frontend/Config anwenden (überschreibt File)
+        # 3. Apply parameters from Frontend/Config (overwrites file)
         params["zwork"] = str(config.get("z_work", -0.1))
         params["mill-feed"] = str(config.get("feed_rate", 200))
         
-        # 4. Defaults setzen, falls nicht im File vorhanden
+        # 4. Set defaults if not present in file
         if "zsafe" not in params:
             params["zsafe"] = str(config.get("z_safe", 2.0))
         if "mill-speed" not in params:
             params["mill-speed"] = str(config.get("spindle_speed", 12000))
             
-        # 5. Flags erzwingen
+        # 5. Force flags
         flags.add("zero-start")
         
-        # 6. Befehl zusammenbauen
+        # 6. Assemble command
         for k, v in params.items():
             cmd.extend([f"--{k}", v])
             
         for f in flags:
             cmd.append(f"--{f}")
         
-        # Eingabedateien und explizite Outputs
-        # Wir setzen explizite Ausgabedateinamen, um Config-Werte zu überschreiben
+        # Input files and explicit outputs
+        # We set explicit output filenames to overwrite config values
         if front_gerber:
             cmd.extend(["--front", front_gerber])
             cmd.extend(["--front-output", "pcb_project_front.gcode"])
@@ -95,10 +95,10 @@ class PcbTransformer:
             cmd.extend(["--drill", drill_gerber])
             cmd.extend(["--drill-output", "pcb_project_drill.gcode"])
             
-        # Output Konfiguration
+        # Output configuration
         cmd.extend(["--output-dir", output_dir])
         
-        # Prozess ausführen
+        # Execute process
         try:
             subprocess.run(cmd, check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
@@ -113,16 +113,16 @@ class PcbTransformer:
 
     def process_gcode(self, gcode_path, offset_x=0.0, offset_y=0.0):
         """
-        Liest G-Code ein, wendet Offset an, segmentiert lange G1-Fahrwege
-        und wendet Leveling an.
+        Reads G-code, applies offset, segments long G1 moves,
+        and applies leveling.
         """
-        MAX_SEGMENT_LENGTH = 1.0 # mm - Maximale Länge eines Segments für Leveling
+        MAX_SEGMENT_LENGTH = 1.0 # mm - Maximum length of a segment for leveling
 
         probe_data = None
         points = None
         values = None
 
-        # Probe Daten laden
+        # Load probe data
         if os.path.exists(self.probe_file):
             with open(self.probe_file, 'r') as f:
                 probe_data = json.load(f)
@@ -138,17 +138,17 @@ class PcbTransformer:
         current_x = 0.0
         current_y = 0.0
         current_z = 0.0
-        current_mode = 'G0' # Startannahme
+        current_mode = 'G0' # Initial assumption
         
         min_x, max_x = float('inf'), float('-inf')
         min_y, max_y = float('inf'), float('-inf')
         min_z, max_z = float('inf'), float('-inf')
         has_coords = False
 
-        # Helper für Z-Interpolation
+        # Helper for Z-interpolation
         def get_z_offset(x, y):
             if points is None: return 0.0
-            # griddata ist robust, aber bei vielen Punkten langsam. Für PCB G-Code (<10k Zeilen) ok.
+            # griddata is robust, but slow with many points. OK for PCB G-code (<10k lines).
             return float(griddata(points, values, (x, y), method='linear', fill_value=0.0))
 
         for line in lines:
@@ -159,11 +159,11 @@ class PcbTransformer:
             
             parts = line_stripped.split()
             
-            # Modus erkennen (G0 vs G1)
+            # Detect mode (G0 vs G1)
             if 'G0' in parts or 'G00' in parts: current_mode = 'G0'
             elif 'G1' in parts or 'G01' in parts: current_mode = 'G1'
             
-            # Zielkoordinaten parsen
+            # Parse target coordinates
             target_x = current_x
             target_y = current_y
             target_z = current_z
@@ -183,18 +183,18 @@ class PcbTransformer:
                 elif part.startswith('Z'):
                     target_z = float(part[1:])
                     has_z = True
-                elif not part.startswith('G'): # Alles was kein G-Befehl und keine Koordinate ist (F, S, M, T)
+                elif not part.startswith('G'): # Everything that is not a G-command or coordinate (F, S, M, T)
                     other_parts.append(part)
-                elif part not in ['G0', 'G00', 'G1', 'G01']: # Andere G-Befehle (G21, G90 etc)
+                elif part not in ['G0', 'G00', 'G1', 'G01']: # Other G-commands (G21, G90 etc)
                     other_parts.append(part)
             
-            # Segmentierung prüfen (nur bei G1 und wenn Probe-Daten da sind)
+            # Check segmentation (only for G1 and if probe data exists)
             dist = 0.0
             if has_x or has_y:
                 dist = np.sqrt((target_x - current_x)**2 + (target_y - current_y)**2)
             
             if current_mode == 'G1' and dist > MAX_SEGMENT_LENGTH and points is not None:
-                # Segmentieren!
+                # Segment!
                 num_segments = int(np.ceil(dist / MAX_SEGMENT_LENGTH))
                 
                 for i in range(1, num_segments + 1):
@@ -202,7 +202,7 @@ class PcbTransformer:
                     seg_x = current_x + (target_x - current_x) * t
                     seg_y = current_y + (target_y - current_y) * t
                     
-                    # Z linear interpolieren (falls Rampe) + Leveling Offset
+                    # Linear Z interpolation (if ramp) + Leveling Offset
                     seg_z_base = current_z + (target_z - current_z) * t
                     z_offset = get_z_offset(seg_x, seg_y)
                     seg_z_final = seg_z_base + z_offset
@@ -211,9 +211,9 @@ class PcbTransformer:
                     if seg_z_final < min_z: min_z = seg_z_final
                     if seg_z_final > max_z: max_z = seg_z_final
                     
-                    # Zeile bauen
+                    # Build line
                     seg_line = f"G1 X{seg_x:.4f} Y{seg_y:.4f} Z{seg_z_final:.4f}"
-                    # F-Werte etc. nur beim ersten Segment anhängen
+                    # Append F-values etc. only to the first segment
                     if i == 1 and other_parts:
                         seg_line += " " + " ".join(other_parts)
                     new_lines.append(seg_line)
@@ -222,7 +222,7 @@ class PcbTransformer:
                 current_x, current_y, current_z = target_x, target_y, target_z
             
             else:
-                # Standard-Verarbeitung (keine Segmentierung, z.B. G0 oder kurze G1)
+                # Standard processing (no segmentation, e.g., G0 or short G1)
                 new_line_parts = []
                 if 'G0' in parts or 'G00' in parts: new_line_parts.append('G0')
                 elif 'G1' in parts or 'G01' in parts: new_line_parts.append('G1')
@@ -230,7 +230,7 @@ class PcbTransformer:
                 if has_x: new_line_parts.append(f"X{target_x:.4f}")
                 if has_y: new_line_parts.append(f"Y{target_y:.4f}")
                 
-                # Z-Leveling anwenden
+                # Apply Z-Leveling
                 final_z_val = target_z
                 if has_z or (has_x or has_y): # Auch bei XY-Move Z anpassen (Leveling)
                     z_offset = get_z_offset(target_x, target_y)
@@ -247,7 +247,7 @@ class PcbTransformer:
                 if final_z_val < min_z: min_z = final_z_val
                 if final_z_val > max_z: max_z = final_z_val
 
-            # Dimensionen tracken
+            # Track dimensions
             if has_x or has_y:
                 has_coords = True
                 if current_x < min_x: min_x = current_x
@@ -257,7 +257,7 @@ class PcbTransformer:
 
         dims = None
         if has_coords:
-            # Falls kein Z gefunden wurde (2D), Nullen setzen
+            # If no Z found (2D), set to zero
             if min_z == float('inf'): min_z = 0.0
             if max_z == float('-inf'): max_z = 0.0
             

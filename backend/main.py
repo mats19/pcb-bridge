@@ -10,7 +10,7 @@ import uvicorn
 from typing import Optional
 from transformer import PcbTransformer
 
-# Pfade relativ zur Position dieser Datei (main.py) bestimmen
+# Determine paths relative to this file (main.py)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
@@ -39,7 +39,7 @@ class ProbeResult(BaseModel):
     points: list[ProbePoint]
 
 def generate_viz_gcode(points):
-    """Generiert G-Code zur Visualisierung der Probe-Punkte."""
+    """Generates G-code to visualize the probe points."""
     lines = ["; Probe Grid Visualization", "; DO NOT RUN - VISUALIZATION ONLY", "G21", "G90", "G0 Z2.0"]
     for p in points:
         # Support dict (simulation) and object (pydantic)
@@ -55,8 +55,8 @@ def generate_viz_gcode(points):
 
 @app.post("/probe/save")
 async def save_probe_result(result: ProbeResult):
-    """
-    Speichert das Ergebnis eines echten Abtastvorgangs (vom Frontend gesendet).
+    """ 
+    Saves the result of a real probing run (sent from the frontend).
     """
     file_path = os.path.join(DATA_DIR, "probe_result.json")
     with open(file_path, "w") as f:
@@ -67,19 +67,19 @@ async def save_probe_result(result: ProbeResult):
 
 @app.post("/probe/simulate")
 async def simulate_probe_run(config: ProbeConfig):
+    """ 
+    Directly creates a probe_result.json based on dimensions, 
+    without needing to save a grid beforehand.
     """
-    Erstellt direkt eine probe_result.json basierend auf den Dimensionen,
-    ohne dass vorher ein Grid gespeichert werden muss.
-    """
-    # Gitterpunkte berechnen
+    # Calculate grid points
     xs = np.linspace(0, config.width, config.points_x)
     ys = np.linspace(0, config.height, config.points_y)
 
-    # Simuliere eine gewölbte Oberfläche (z.B. Sinus-Welle + leichte Neigung)
+    # Simulate a curved surface (e.g., Sine wave + slight tilt)
     simulated_points = []
     for y in ys:
         for x in xs:
-            # Fake Math: Eine Wölbung von max ca. 0.5mm und eine Neigung
+            # Fake Math: Warping of max approx. 0.5mm and a tilt
             z_sim = 0.2 * np.sin(x / 20.0) + 0.01 * y + random.uniform(-0.005, 0.005)
             simulated_points.append({"x": float(x), "y": float(y), "z": round(z_sim, 4)})
 
@@ -94,8 +94,8 @@ async def simulate_probe_run(config: ProbeConfig):
 
 @app.get("/probe/latest")
 async def get_latest_probe_result():
-    """
-    Lädt das letzte gespeicherte Probe-Ergebnis (falls vorhanden).
+    """ 
+    Loads the last saved probe result (if available).
     """
     file_path = os.path.join(DATA_DIR, "probe_result.json")
     if not os.path.exists(file_path):
@@ -104,7 +104,7 @@ async def get_latest_probe_result():
     with open(file_path, "r") as f:
         data = json.load(f)
     
-    # Visualisierung neu generieren
+    # Regenerate visualization
     viz = generate_viz_gcode(data.get("points", []))
     
     return {
@@ -116,7 +116,7 @@ async def get_latest_probe_result():
 
 @app.delete("/probe/reset")
 async def reset_probe_data():
-    """Löscht die gespeicherten Probe-Daten."""
+    """Deletes the saved probe data."""
     file_path = os.path.join(DATA_DIR, "probe_result.json")
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -124,7 +124,7 @@ async def reset_probe_data():
 
 @app.delete("/process/reset")
 async def reset_process_data():
-    """Löscht den Verarbeitungsstatus."""
+    """Clears the processing state."""
     state_file = os.path.join(DATA_DIR, "process_state.json")
     if os.path.exists(state_file):
         os.remove(state_file)
@@ -140,8 +140,8 @@ async def startup_event():
 
 @app.get("/process/latest")
 async def get_latest_process():
-    """
-    Lädt das Ergebnis der letzten Gerber-Verarbeitung.
+    """ 
+    Loads the result of the last Gerber processing.
     """
     state_file = os.path.join(DATA_DIR, "process_state.json")
     if not os.path.exists(state_file):
@@ -150,7 +150,7 @@ async def get_latest_process():
     with open(state_file, "r") as f:
         state = json.load(f)
         
-    # Inhalte der G-Code Dateien laden
+    # Load content of G-code files
     gcode_data = {}
     for key in ["front", "outline", "drill"]:
         path = state.get("files", {}).get(key)
@@ -169,7 +169,7 @@ async def get_latest_process():
     }
 
 def get_config_value(key, default="?"):
-    """Liest einen Wert aus der pcb2gcode.conf"""
+    """Reads a value from pcb2gcode.conf"""
     try:
         config_path = os.path.join(os.path.dirname(BASE_DIR), "config", "pcb2gcode.conf")
         if os.path.exists(config_path):
@@ -196,29 +196,31 @@ async def process_pcb(
     offset_y: float = Form(0.0)
 ):
     """
-    Nimmt Gerber-Dateien entgegen, ruft pcb2gcode auf und wendet Leveling an.
+    Accepts Gerber files, calls pcb2gcode, and applies leveling.
     """
     upload_dir = os.path.join(DATA_DIR, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
+    processed_dir = os.path.join(DATA_DIR, "gcode_processed")
+    os.makedirs(processed_dir, exist_ok=True)
     state_file = os.path.join(DATA_DIR, "process_state.json")
     
-    # Alten Zustand laden, um Pfade wiederzuverwenden, falls keine neuen Dateien hochgeladen werden
+    # Load old state to reuse paths if no new files are uploaded
     old_state = {}
     if os.path.exists(state_file):
         try:
             with open(state_file, "r") as f:
                 old_state = json.load(f)
-        except:
+        except Exception:
             pass
     
-    # Dateien speichern
+    # Save files
     front_path = None
     outline_path = None
     drill_path = None
     filenames = {}
-    raw_paths = {} # Neue Struktur für Rohdateipfade
+    raw_paths = {} # New structure for raw file paths
     
-    # Helper: Pfad aus altem State holen
+    # Helper: Get path from old state
     def get_old_raw(key):
         return old_state.get("raw_paths", {}).get(key)
     def get_old_name(key):
@@ -229,7 +231,7 @@ async def process_pcb(
     has_outline = outline is not None or (get_old_raw("outline") and os.path.exists(get_old_raw("outline")))
     has_drill = drill is not None or (get_old_raw("drill") and os.path.exists(get_old_raw("drill")))
     
-    if not (has_front or has_outline or has_drill):
+    if not (has_front or has_outline or has_drill): 
         return {"status": "error", "message": "No input files provided and no previous state found. Please upload Gerber files."}
 
     if front:
@@ -265,10 +267,10 @@ async def process_pcb(
         filenames["drill"] = get_old_name("drill")
         raw_paths["drill"] = drill_path
             
-    # Transformer initialisieren
+    # Initialize Transformer
     transformer = PcbTransformer(data_dir=DATA_DIR)
     
-    # 1. G-Code generieren
+    # 1. Generate G-code
     config = {
         "z_work": z_work, 
         "feed_rate": feed_rate, 
@@ -277,7 +279,7 @@ async def process_pcb(
     }
     raw_files = transformer.run_pcb2gcode(front_path, outline_path, drill_path, config)
     
-    # 2. Leveling auf alle generierten Dateien anwenden
+    # 2. Apply leveling to all generated files
     leveled_files = {}
     gcode_contents = {}
     dimensions = {}
@@ -291,8 +293,8 @@ async def process_pcb(
             if dims:
                 dimensions[key] = dims
             
-            # Header Injection: Werkzeugwechsel-Hinweis einfügen
-            # pcb2gcode macht das bei Drills automatisch, aber oft nicht bei Front/Outline
+            # Header Injection: Insert tool change notice
+            # pcb2gcode does this automatically for drills, but often not for Front/Outline
             header = ""
             if key == "front":
                 dia = get_config_value("mill-diameters", "unknown")
@@ -304,15 +306,15 @@ async def process_pcb(
             if header:
                 gcode = header + gcode
             
-            # Speichern
-            out_path = os.path.join(BASE_DIR, f"pcb_leveled_{key}.gcode")
+            # Save to processed directory
+            out_path = os.path.join(processed_dir, f"pcb_leveled_{key}.gcode")
             with open(out_path, "w") as f:
                 f.write(gcode)
             
             leveled_files[key] = out_path
             gcode_contents[key] = gcode
 
-    # Status speichern für Reload
+    # Save state for reload
     with open(state_file, "w") as f:
         json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames, "raw_paths": raw_paths}, f, indent=2)
     
