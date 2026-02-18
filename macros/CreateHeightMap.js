@@ -192,12 +192,6 @@
                 var payload = getPayload();
                 if(!payload) return;
 
-                // Real probing logic implementation:
-                // 1. Loop over x/y coordinates (calculated in JS)
-                // 2. socket.emit('run', 'G0 X... Y...')
-                // 3. socket.emit('run', 'G38.2 Z-5 F100')
-                // 4. Wait for socket message with "[PRB:x,y,z:state]"
-                // 5. Collect data and send to /probe/save at the end
                 if (payload.points_x < 2 || payload.points_y < 2) {
                     Metro.toast.create("Please specify at least 2 points per axis.", null, 3000, "alert");
                     return;
@@ -205,7 +199,7 @@
 
                 // Configuration
                 var zSafe = 2.0;       // Retract height [mm]
-                var zProbeMin = -2.0;  // Max depth [mm]
+                var zProbeMin = -5.0;  // Max depth [mm]
                 var feed = 100;        // Probing feed rate [mm/min]
 
                 // Generate points
@@ -224,58 +218,67 @@
 
                 var results = [];
                 var currentIndex = 0;
-                var probingActive = true;
                 var btn = $(this);
                 
                 btn.prop('disabled', true);
-                Metro.toast.create("Experimental Probing started...", null, 2000, "info");
+                Metro.toast.create("Probing started...", null, 2000, "info");
 
-                // Serial listener for [PRB:...] responses
-                var onSerial = function(data) {
-                    if (!probingActive) return;
-                    
-                    var line = data;
-                    if (typeof data === 'object' && data.line) line = data.line;
-                    if (typeof line !== 'string') return;
+                // Disable old listeners to be safe
+                socket.off('prbResult');
 
-                    if (line.indexOf('[PRB:') !== -1) {
-                        // Parse [PRB:x,y,z:state]
-                        var content = line.substring(line.indexOf('[PRB:') + 5, line.indexOf(']'));
-                        var parts = content.split(':');
-                        var coords = parts[0].split(',');
-                        var mZ = parseFloat(coords[2]);
-
+                // Listener for Probe Results
+                // Logic adapted from 'findCircleCenter' macro (event-driven approach)
+                var onProbeResult = function(prbdata) {
+                    if (prbdata.state) {
+                        // Success
                         results.push({
                             x: points[currentIndex].x,
                             y: points[currentIndex].y,
-                            z_raw: mZ
+                            z_raw: prbdata.z
                         });
 
-                        // Retract
-                        socket.emit('run', 'G0 Z' + zSafe);
                         currentIndex++;
-                        setTimeout(nextPoint, 200);
+                        nextPoint();
+                    } else {
+                        // Failed
+                        Metro.toast.create("Probe failed at point " + (currentIndex + 1), null, 5000, "alert");
+                        finishProbing(false);
                     }
                 };
 
-                socket.on('serial', onSerial);
+                socket.on('prbResult', onProbeResult);
 
                 function nextPoint() {
                     if (currentIndex >= points.length) {
-                        finishProbing();
+                        finishProbing(true);
                         return;
                     }
                     var p = points[currentIndex];
-                    socket.emit('run', 'G0 X' + p.x.toFixed(3) + ' Y' + p.y.toFixed(3));
-                    socket.emit('run', 'G38.2 Z' + zProbeMin + ' F' + feed);
+                    
+                    // Construct G-code block: Move to XY, then Probe Z
+                    var gcode = `G90\nG0 Z${zSafe}\nG0 X${p.x.toFixed(3)} Y${p.y.toFixed(3)}\nG38.2 Z${zProbeMin} F${feed}`;
+                    
+                    socket.emit('runJob', {
+                        data: gcode,
+                        isJob: false,
+                        completedMsg: false,
+                        fileName: ""
+                    });
                 }
 
-                function finishProbing() {
-                    probingActive = false;
-                    socket.off('serial', onSerial);
+                function finishProbing(success) {
+                    socket.off('prbResult', onProbeResult);
                     btn.prop('disabled', false);
+                    
+                    // Retract safely
+                    socket.emit('runJob', {
+                        data: `G0 Z${zSafe}`,
+                        isJob: false,
+                        completedMsg: false,
+                        fileName: ""
+                    });
 
-                    if (results.length > 0) {
+                    if (success && results.length > 0) {
                         // Normalization: Z relative to the first point (0,0)
                         var refZ = results[0].z_raw;
                         var finalPoints = results.map(p => ({
@@ -304,9 +307,8 @@
                     }
                 }
 
-                // Start: First move to Safe Height, then first point
-                socket.emit('run', 'G0 Z' + zSafe);
-                setTimeout(nextPoint, 500);
+                // Start the loop
+                nextPoint();
             });
         }
     });
