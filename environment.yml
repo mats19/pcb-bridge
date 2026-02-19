@@ -8,6 +8,7 @@ dependencies:
   - uvicorn
   - scipy
   - numpy
+  - matplotlib
   - python-multipart
   - pip
   - pip:

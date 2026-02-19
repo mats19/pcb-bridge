@@ -4,42 +4,54 @@
 (function() {
     var content = `
         <div class="p-2">
-            <form id="gerberForm">
-                <div class="mb-2">
-                    <label>Front Copper (Gerber) <span id="lbl_front" class="text-muted text-small"></span></label>
-                    <input type="file" id="file_front" data-role="file" data-button-title="Select">
-                </div>
-                <div class="mb-2">
-                    <label>Outline / Edge Cuts <span id="lbl_outline" class="text-muted text-small"></span></label>
-                    <input type="file" id="file_outline" data-role="file" data-button-title="Select">
-                </div>
-                <div class="mb-2">
-                    <label>Drill File <span id="lbl_drill" class="text-muted text-small"></span></label>
-                    <input type="file" id="file_drill" data-role="file" data-button-title="Select">
-                </div>
-                <div class="row mb-2">
-                    <div class="cell-6">
-                        <label>Offset X [mm]</label>
-                        <input type="number" id="val_offset_x" value="0" data-role="input">
+            <div class="row">
+                <div class="cell-7">
+                    <form id="gerberForm">
+                        <div class="mb-2">
+                            <label>Front Copper (Gerber) <span id="lbl_front" class="text-muted text-small"></span></label>
+                            <input type="file" id="file_front" data-role="file" data-button-title="Select">
+                        </div>
+                        <div class="mb-2">
+                            <label>Outline / Edge Cuts <span id="lbl_outline" class="text-muted text-small"></span></label>
+                            <input type="file" id="file_outline" data-role="file" data-button-title="Select">
+                        </div>
+                        <div class="mb-2">
+                            <label>Drill File <span id="lbl_drill" class="text-muted text-small"></span></label>
+                            <input type="file" id="file_drill" data-role="file" data-button-title="Select">
+                        </div>
+                        <div class="row mb-2">
+                            <div class="cell-6">
+                                <label>Offset X [mm]</label>
+                                <input type="number" id="val_offset_x" value="0" data-role="input">
+                            </div>
+                            <div class="cell-6">
+                                <label>Offset Y [mm]</label>
+                                <input type="number" id="val_offset_y" value="0" data-role="input">
+                            </div>
+                        </div>
+                    </form>
+                    
+                    <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
+                        <div id="dimensions_info" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
+                        <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
                     </div>
-                    <div class="cell-6">
-                        <label>Offset Y [mm]</label>
-                        <input type="number" id="val_offset_y" value="0" data-role="input">
+
+                    <div class="d-flex flex-row w-100 mb-2" id="view_buttons" style="display:none; gap: 5px;"></div>
+
+                    <div class="mt-2">
+                        <button class="button success w-100" id="btn_process">
+                            <span class="mif-cogs"></span> Process & Level
+                        </button>
                     </div>
                 </div>
-            </form>
-            
-            <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
-                <div id="dimensions_info" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
-                <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
-            </div>
-
-            <div class="d-flex flex-row w-100 mb-2" id="view_buttons" style="display:none; gap: 5px;"></div>
-
-            <div class="mt-2">
-                <button class="button success w-100" id="btn_process">
-                    <span class="mif-cogs"></span> Process & Level
-                </button>
+                <div class="cell-5 text-center d-flex flex-align-center flex-justify-center">
+                    <div id="viz_container" style="display:none; width: 100%;">
+                        <img id="viz_img" src="" style="width: 100%; border: 1px solid #ccc; max-height: 350px; object-fit: contain;">
+                        <div class="mt-1">
+                            <a id="viz_link" href="#" target="_blank" class="text-small">Open full size <span class="mif-external"></span></a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -47,7 +59,7 @@
     Metro.dialog.create({
         title: "PCB Bridge - Gerber Processing",
         content: content,
-        width: 500,
+        width: 750,
         actions: [{ caption: "Close", cls: "js-dialog-close" }],
         onShow: function(dialog) {
             var el = dialog.element;
@@ -85,6 +97,20 @@
                 }
             }
 
+            function updateImage(type) {
+                // Add timestamp to force refresh
+                var t = type || 'front';
+                var url = "http://127.0.0.1:8000/data/viz_gcode_" + t + ".png?t=" + new Date().getTime();
+                var img = el.find('#viz_img');
+                var link = el.find('#viz_link');
+                var container = el.find('#viz_container');
+                
+                var temp = new Image();
+                temp.onload = function() { img.attr('src', url); link.attr('href', url); container.show(); };
+                temp.onerror = function() { container.hide(); };
+                temp.src = url;
+            }
+
             function renderViewButtons() {
                 var container = el.find('#view_buttons');
                 container.html('');
@@ -102,6 +128,7 @@
                         btn.on('click', function() {
                             updateEditor(currentGcodeData[key]);
                             updateDimensionsInfo(currentDimensions[key]);
+                            updateImage(key);
                             Metro.toast.create(map[key].label + " loaded.", null, 1000, "info");
                         });
                         container.append(btn);
@@ -137,6 +164,11 @@
                             if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
                             if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
                         }
+
+                        // Show Image
+                        if (currentGcodeData.front) updateImage('front');
+                        else if (currentGcodeData.outline) updateImage('outline');
+                        else if (currentGcodeData.drill) updateImage('drill');
                     }
                 })
                 .catch(e => {
@@ -160,6 +192,7 @@
                     el.find('#lbl_front').text("");
                     el.find('#lbl_outline').text("");
                     el.find('#lbl_drill').text("");
+                    el.find('#viz_container').hide();
                     
                     // 2. Clear internal data
                     currentGcodeData = { front: null, outline: null, drill: null };
@@ -235,6 +268,11 @@
                             updateEditor(data.gcode.front);
                             updateDimensionsInfo(currentDimensions.front);
                         }
+
+                        // Show Image
+                        if (data.gcode.front) updateImage('front');
+                        else if (data.gcode.outline) updateImage('outline');
+                        else if (data.gcode.drill) updateImage('drill');
                     } else {
                         Metro.toast.create("Error: " + JSON.stringify(data), null, 5000, "alert");
                     }

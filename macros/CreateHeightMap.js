@@ -4,51 +4,63 @@
 (function() {
     var content = `
         <div class="p-2">
-            <div class="row mb-2">
-                <div class="cell-6">
-                    <label>Size X [mm]</label>
-                    <input type="number" id="pb_width" data-role="input" value="50" data-append="mm">
-                </div>
-                <div class="cell-6">
-                    <label>Size Y [mm]</label>
-                    <input type="number" id="pb_height" data-role="input" value="30" data-append="mm">
-                </div>
-            </div>
-            <div class="row mb-2">
-                <div class="cell-6">
-                    <label>Points X</label>
-                    <input type="number" id="pb_px" data-role="input" value="5">
-                </div>
-                <div class="cell-6">
-                    <label>Points Y</label>
-                    <input type="number" id="pb_py" data-role="input" value="3">
-                </div>
-            </div>
-            
-            <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
-                <div id="probe_stats" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
-                <button class="button small warning outline" id="pb_reset" title="Reset Data"><span class="mif-bin"></span> Reset</button>
-            </div>
-
             <div class="row">
-                <div class="cell-6">
-                    <button class="button primary w-100" id="pb_sim">
-                        <span class="mif-magic-wand"></span> Simulation
-                    </button>
+                <div class="cell-7">
+                    <div class="row mb-2">
+                        <div class="cell-6">
+                            <label>Size X [mm]</label>
+                            <input type="number" id="pb_width" data-role="input" value="50" data-append="mm">
+                        </div>
+                        <div class="cell-6">
+                            <label>Size Y [mm]</label>
+                            <input type="number" id="pb_height" data-role="input" value="30" data-append="mm">
+                        </div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="cell-6">
+                            <label>Points X</label>
+                            <input type="number" id="pb_px" data-role="input" value="5">
+                        </div>
+                        <div class="cell-6">
+                            <label>Points Y</label>
+                            <input type="number" id="pb_py" data-role="input" value="3">
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex flex-justify-between flex-align-center mt-2 mb-2">
+                        <div id="probe_stats" class="text-small text-muted border p-1 mr-2" style="display:none; flex-grow: 1;"></div>
+                        <button class="button small warning outline" id="pb_reset" title="Reset Data"><span class="mif-bin"></span> Reset</button>
+                    </div>
+
+                    <div class="row">
+                        <div class="cell-6">
+                            <button class="button primary w-100" id="pb_sim">
+                                <span class="mif-magic-wand"></span> Simulation
+                            </button>
+                        </div>
+                        <div class="cell-6">
+                            <button class="button alert w-100" id="pb_probe">
+                                <span class="mif-target"></span> Probing
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="cell-6">
-                    <button class="button alert w-100" id="pb_probe">
-                        <span class="mif-target"></span> Probing
-                    </button>
+                <div class="cell-5 text-center d-flex flex-align-center flex-justify-center">
+                    <div id="viz_container" style="display:none; width: 100%;">
+                        <img id="viz_img" src="" style="width: 100%; border: 1px solid #ccc; max-height: 250px; object-fit: contain;">
+                        <div class="mt-1">
+                            <a id="viz_link" href="#" target="_blank" class="text-small">Open full size <span class="mif-external"></span></a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     `;
 
     Metro.dialog.create({
-        title: "PCB Bridge - Probe Grid",
+        title: "PCB Bridge - Heightmap",
         content: content,
-        width: 450,
+        width: 650,
         actions: [
             {
                 caption: "Close",
@@ -110,6 +122,20 @@
                 div.show();
             }
 
+            function updateImage() {
+                // Add timestamp to force refresh
+                var url = "http://127.0.0.1:8000/data/viz_heightmap.png?t=" + new Date().getTime();
+                var img = el.find('#viz_img');
+                var link = el.find('#viz_link');
+                var container = el.find('#viz_container');
+                
+                // Simple check to see if image loads
+                var temp = new Image();
+                temp.onload = function() { img.attr('src', url); link.attr('href', url); container.show(); };
+                temp.onerror = function() { container.hide(); };
+                temp.src = url;
+            }
+
             function loadProbeData(isAutoLoad) {
                 if (!isAutoLoad) Metro.toast.create("Loading data...", null, 1000, "info");
                 
@@ -134,6 +160,9 @@
                         
                         // Show stats
                         updateStats(data.points);
+
+                        // Show Image
+                        updateImage();
                     } else {
                         if (!isAutoLoad) Metro.toast.create("No saved data found.", null, 3000, "warning");
                     }
@@ -159,6 +188,7 @@
                     el.find('#pb_px').val(5);
                     el.find('#pb_py').val(3);
                     el.find('#probe_stats').hide();
+                    el.find('#viz_container').hide();
                     
                     // Clear editor
                     if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
@@ -182,6 +212,7 @@
                     console.log(data);
                     if (data.viz_gcode) updateEditor(data.viz_gcode);
                     updateStats(data.points);
+                    updateImage();
                 })
                 .catch(e => {
                     Metro.toast.create("Error: " + e, null, 3000, "alert");
@@ -300,6 +331,7 @@
                             console.log(data);
                             if (data.viz_gcode) updateEditor(data.viz_gcode);
                             updateStats(finalPoints);
+                            updateImage();
                         })
                         .catch(e => {
                             Metro.toast.create("Error: " + e, null, 5000, "alert");

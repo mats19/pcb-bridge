@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
 import json
@@ -9,12 +10,16 @@ import random
 import uvicorn
 from typing import Optional
 from transformer import PcbTransformer
+from visualization import generate_heightmap_image, generate_gcode_image
 
 # Determine paths relative to this file (main.py)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 app = FastAPI(title="pcb-bridge API")
+
+# Serve data directory (images) statically
+app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,10 +65,14 @@ async def save_probe_result(result: ProbeResult):
     """
     file_path = os.path.join(DATA_DIR, "probe_result.json")
     with open(file_path, "w") as f:
-        f.write(result.json(indent=2))
+        f.write(result.model_dump_json(indent=2))
+    
+    # Generate Heightmap Image immediately
+    out_path_hm = os.path.join(DATA_DIR, "viz_heightmap.png")
+    generate_heightmap_image(file_path, out_path_hm)
     
     viz = generate_viz_gcode(result.points)
-    return {"status": "saved", "file": file_path, "viz_gcode": viz}
+    return {"status": "saved", "file": file_path, "viz_gcode": viz, "images": {"heightmap": out_path_hm}}
 
 @app.post("/probe/simulate")
 async def simulate_probe_run(config: ProbeConfig):
@@ -83,14 +92,18 @@ async def simulate_probe_run(config: ProbeConfig):
             z_sim = 0.2 * np.sin(x / 20.0) + 0.01 * y + random.uniform(-0.005, 0.005)
             simulated_points.append({"x": float(x), "y": float(y), "z": round(z_sim, 4)})
 
-    result_data = {"config": config.dict(), "points": simulated_points}
+    result_data = {"config": config.model_dump(), "points": simulated_points}
     
     result_path = os.path.join(DATA_DIR, "probe_result.json")
     with open(result_path, "w") as f:
         json.dump(result_data, f, indent=2)
 
+    # Generate Heightmap Image immediately
+    out_path_hm = os.path.join(DATA_DIR, "viz_heightmap.png")
+    generate_heightmap_image(result_path, out_path_hm)
+
     viz = generate_viz_gcode(simulated_points)
-    return {"message": "Simulation complete", "file": result_path, "viz_gcode": viz, "points": simulated_points}
+    return {"message": "Simulation complete", "file": result_path, "viz_gcode": viz, "points": simulated_points, "images": {"heightmap": out_path_hm}}
 
 @app.get("/probe/latest")
 async def get_latest_probe_result():
@@ -165,7 +178,8 @@ async def get_latest_process():
         "config": state.get("config"),
         "gcode": gcode_data,
         "dimensions": state.get("dimensions"),
-        "filenames": state.get("filenames")
+        "filenames": state.get("filenames"),
+        "images": state.get("images")
     }
 
 def get_config_value(key, default="?"):
@@ -310,11 +324,42 @@ async def process_pcb(
             leveled_files[key] = out_path
             gcode_contents[key] = gcode
 
+    # Generate G-code Visualization (All types)
+    images = {}
+    for key in ["front", "outline", "drill"]:
+        if key in leveled_files:
+            out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")
+            if generate_gcode_image(leveled_files[key], out_path_gc):
+                images[f"gcode_{key}"] = out_path_gc
+
     # Save state for reload
     with open(state_file, "w") as f:
-        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames, "raw_paths": raw_paths}, f, indent=2)
+        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames, "raw_paths": raw_paths, "images": images}, f, indent=2)
     
-    return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "filenames": filenames}
+    return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "filenames": filenames, "images": images}
+
+@app.post("/visualize/create")
+async def create_visualizations():
+    """
+    Generates PNG images for the Heightmap and the Leveled G-code.
+    """
+    images = {}
+    
+    # 1. Visualize Heightmap
+    probe_file = os.path.join(DATA_DIR, "probe_result.json")
+    out_path_hm = os.path.join(DATA_DIR, "viz_heightmap.png")
+    if generate_heightmap_image(probe_file, out_path_hm):
+        images["heightmap"] = out_path_hm
+
+    # 2. Visualize Leveled G-code (All types)
+    for key in ["front", "outline", "drill"]:
+        gcode_path = os.path.join(DATA_DIR, "gcode_processed", f"pcb_leveled_{key}.gcode")
+        if os.path.exists(gcode_path):
+            out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")
+            if generate_gcode_image(gcode_path, out_path_gc):
+                images[f"gcode_{key}"] = out_path_gc
+
+    return {"status": "success", "images": images}
 
 @app.get("/status")
 async def get_status():
