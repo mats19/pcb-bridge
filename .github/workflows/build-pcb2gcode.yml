@@ -31,37 +31,24 @@ jobs:
             mingw-w64-x86_64-boost
             mingw-w64-x86_64-glibmm
             mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-gettext
-            mingw-w64-x86_64-cairo
-            mingw-w64-x86_64-pango
-            mingw-w64-x86_64-gtk2
 
-      - name: Install gerbv (with fallback)
+      - name: Compile pcb2gcode (Headless)
         run: |
-          # Probiert erst das Standardpaket, dann die Git-Version, falls Ersteres fehlt
-          pacman -S --noconfirm --needed mingw-w64-x86_64-gerbv || pacman -S --noconfirm --needed mingw-w64-x86_64-libgerbv-git
-
-      - name: Install gerbv via Search
-        run: |
-          # Suche nach verfügbaren gerbv Paketen und installiere das erste gefundene
-          PACKAGE=$(pacman -Ssq gerbv | grep 'mingw-w64-x86_64' | head -n 1)
-          if [ -z "$PACKAGE" ]; then
-            echo "Gerbv nicht gefunden, versuche Repository Update..."
-            pacman -Sy
-            PACKAGE=$(pacman -Ssq gerbv | grep 'mingw-w64-x86_64' | head -n 1)
-          fi
-          echo "Installiere Paket: $PACKAGE"
-          pacman -S --noconfirm --needed $PACKAGE
+          cd build-dir
+          ./autogen.sh
+          # Wir deaktivieren GUI und Gerbv, um den Build zu garantieren
+          ./configure --prefix=/mingw64 --without-gtk --without-gui --disable-shared
+          make -j$(nproc)
 
       - name: Collect Binary and DLLs
         run: |
           mkdir dist
           cp build-dir/pcb2gcode.exe dist/
-          # Sammelt alle Laufzeit-DLLs für die Portabilität
+          # Sammelt die verbleibenden Boost- und System-DLLs
           ldd build-dir/pcb2gcode.exe | grep '/mingw64/bin/' | awk '{print $3}' | xargs -I{} cp {} dist/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pcb2gcode-v2.5-windows
+          name: pcb2gcode-v2.5-headless-windows
           path: dist/
