@@ -1,4 +1,4 @@
-name: Build pcb2gcode v2.5 (Windows)
+name: Get pcb2gcode via Conda (Windows)
 
 on: 
   workflow_dispatch:
@@ -6,49 +6,26 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-
     steps:
-      - name: Checkout pcb2gcode source
-        shell: pwsh
-        run: |
-          git clone --depth 1 --branch v2.5.0 https://github.com/pcb2gcode/pcb2gcode.git build-dir
-
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
+      - name: Setup Micromamba
+        uses: mamba-org/setup-micromamba@v1
         with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            git
-            make
-            autoconf
-            automake
-            libtool
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-boost
-            mingw-w64-x86_64-glibmm
-            mingw-w64-x86_64-pkg-config
-
-      - name: Compile pcb2gcode (Headless)
-        run: |
-          cd build-dir
-          ./autogen.sh
-          # Wir deaktivieren GUI und Gerbv, um den Build zu garantieren
-          ./configure --prefix=/mingw64 --without-gtk --without-gui --disable-shared
-          make -j$(nproc)
+          environment-name: build-env
+          create-args: >-
+            pcb2gcode
+            -c conda-forge
 
       - name: Collect Binary and DLLs
+        shell: pwsh
         run: |
           mkdir dist
-          cp build-dir/pcb2gcode.exe dist/
-          # Sammelt die verbleibenden Boost- und System-DLLs
-          ldd build-dir/pcb2gcode.exe | grep '/mingw64/bin/' | awk '{print $3}' | xargs -I{} cp {} dist/
-
+          # Kopiere die EXE aus dem Conda-Pfad
+          cp $env:MAMBA_ROOT_PREFIX\envs\build-env\Library\bin\pcb2gcode.exe dist/
+          # Kopiere alle notwendigen DLLs (Boost, etc.)
+          cp $env:MAMBA_ROOT_PREFIX\envs\build-env\Library\bin\*.dll dist/
+          
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pcb2gcode-v2.5-headless-windows
+          name: pcb2gcode-windows-conda
           path: dist/
