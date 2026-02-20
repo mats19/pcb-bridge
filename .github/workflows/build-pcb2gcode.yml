@@ -41,13 +41,17 @@ jobs:
           # Probiert erst das Standardpaket, dann die Git-Version, falls Ersteres fehlt
           pacman -S --noconfirm --needed mingw-w64-x86_64-gerbv || pacman -S --noconfirm --needed mingw-w64-x86_64-libgerbv-git
 
-      - name: Compile pcb2gcode
+      - name: Install gerbv via Search
         run: |
-          cd build-dir
-          ./autogen.sh
-          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig:/mingw64/share/pkgconfig"
-          ./configure --prefix=/mingw64
-          make -j$(nproc)
+          # Suche nach verfügbaren gerbv Paketen und installiere das erste gefundene
+          PACKAGE=$(pacman -Ssq gerbv | grep 'mingw-w64-x86_64' | head -n 1)
+          if [ -z "$PACKAGE" ]; then
+            echo "Gerbv nicht gefunden, versuche Repository Update..."
+            pacman -Sy
+            PACKAGE=$(pacman -Ssq gerbv | grep 'mingw-w64-x86_64' | head -n 1)
+          fi
+          echo "Installiere Paket: $PACKAGE"
+          pacman -S --noconfirm --needed $PACKAGE
 
       - name: Collect Binary and DLLs
         run: |
