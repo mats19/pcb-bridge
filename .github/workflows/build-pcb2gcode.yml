@@ -1,4 +1,4 @@
-name: Get pcb2gcode via Conda (Windows)
+name: Get pcb2gcode via Conda (Stable)
 
 on: 
   workflow_dispatch:
@@ -7,25 +7,33 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Setup Micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-name: build-env
-          create-args: >-
-            pcb2gcode
-            -c conda-forge
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          channels: conda-forge
+          python-version: "3.10"
+
+      - name: Install pcb2gcode
+        shell: pwsh
+        run: |
+          conda install -c conda-forge pcb2gcode --yes
+          
       - name: Collect Binary and DLLs
         shell: pwsh
         run: |
           mkdir dist
-          # Kopiere die EXE aus dem Conda-Pfad
-          cp $env:MAMBA_ROOT_PREFIX\envs\build-env\Library\bin\pcb2gcode.exe dist/
-          # Kopiere alle notwendigen DLLs (Boost, etc.)
-          cp $env:MAMBA_ROOT_PREFIX\envs\build-env\Library\bin\*.dll dist/
+          # In der Standard-Conda-Umgebung liegen die Files hier:
+          $CONDA_BIN = "$env:CONDA\Library\bin"
+          cp "$CONDA_BIN\pcb2gcode.exe" dist/
+          # Wir kopieren alle DLLs, um sicherzugehen, dass das Paket standalone läuft
+          cp "$CONDA_BIN\*.dll" dist/
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pcb2gcode-windows-conda
+          name: pcb2gcode-windows-standalone
           path: dist/
