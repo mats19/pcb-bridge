@@ -1,39 +1,28 @@
-name: Get pcb2gcode via Conda (Stable)
+name: Fetch Official pcb2gcode v2.4
 
 on: 
   workflow_dispatch:
 
 jobs:
-  build:
+  get-release:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          auto-update-conda: true
-          channels: conda-forge
-          python-version: "3.10"
-
-      - name: Install pcb2gcode
+      - name: Download v2.4 Release
         shell: pwsh
         run: |
-          conda install -c conda-forge pcb2gcode --yes
+          # Download der offiziellen Windows-Version
+          Invoke-WebRequest -Uri "https://github.com/pcb2gcode/pcb2gcode/releases/download/v2.4.0/pcb2gcode-2.4.0-win64.zip" -OutFile "pcb2gcode.zip"
           
-      - name: Collect Binary and DLLs
+      - name: Extract and Prepare
         shell: pwsh
         run: |
+          Expand-Archive -Path "pcb2gcode.zip" -DestinationPath "temp_extract"
           mkdir dist
-          # In der Standard-Conda-Umgebung liegen die Files hier:
-          $CONDA_BIN = "$env:CONDA\Library\bin"
-          cp "$CONDA_BIN\pcb2gcode.exe" dist/
-          # Wir kopieren alle DLLs, um sicherzugehen, dass das Paket standalone läuft
-          cp "$CONDA_BIN\*.dll" dist/
+          # Wir verschieben nur den Inhalt des extrahierten Ordners in dist
+          Get-ChildItem -Path "temp_extract\*" -Recurse | Copy-Item -Destination "dist" -Force
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pcb2gcode-windows-standalone
+          name: pcb2gcode-v2.4-official
           path: dist/
