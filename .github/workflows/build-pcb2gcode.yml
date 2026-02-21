@@ -10,16 +10,17 @@ jobs:
       - name: Download v2.4 Release
         shell: pwsh
         run: |
-          # Download der offiziellen Windows-Version
-          Invoke-WebRequest -Uri "https://github.com/pcb2gcode/pcb2gcode/releases/download/v2.4.0/pcb2gcode-2.4.0-win64.zip" -OutFile "pcb2gcode.zip"
+          # Download der offiziellen Windows-Version mit dem korrigierten Link
+          $url = "https://github.com/pcb2gcode/pcb2gcode/releases/download/v2.4.0/pcb2gcode-windows-2.4.0.zip"
+          Invoke-WebRequest -Uri $url -OutFile "pcb2gcode.zip"
           
       - name: Extract and Prepare
         shell: pwsh
         run: |
           Expand-Archive -Path "pcb2gcode.zip" -DestinationPath "temp_extract"
           mkdir dist
-          # Wir verschieben nur den Inhalt des extrahierten Ordners in dist
-          Get-ChildItem -Path "temp_extract\*" -Recurse | Copy-Item -Destination "dist" -Force
+          # Wir kopieren den Inhalt des entpackten Ordners (EXE und DLLs) in dist
+          Copy-Item -Path "temp_extract\*" -Destination "dist" -Recurse -Force
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
