@@ -4,16 +4,22 @@ import json
 import numpy as np
 from scipy.interpolate import griddata
 import platform
+import sys
 
 class PcbTransformer:
     def __init__(self, data_dir=None):
         # Determine paths (relative to project root)
         # transformer.py is in backend/, so we go one level up
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(base_dir)
         
-        self.data_dir = data_dir if data_dir else os.path.join(base_dir, "data")
-        self.probe_file = os.path.join(data_dir, "probe_result.json")
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+            self.data_dir = data_dir if data_dir else os.path.join(project_root, "data")
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(base_dir)
+            self.data_dir = data_dir if data_dir else os.path.join(base_dir, "data")
+            
+        self.probe_file = os.path.join(self.data_dir, "probe_result.json")
         
         if platform.system() == "Windows":
             # Windows: Check for .bat/.cmd wrapper if available, else .exe

@@ -1,0 +1,79 @@
+name: Build PCB Bridge Windows Standalone
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Miniforge (Conda)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: pcb-bridge
+          python-version: 3.10
+          auto-activate-base: false
+
+      - name: Install PyInstaller
+        shell: cmd /C CALL {0}
+        run: |
+          conda install -c conda-forge pyinstaller
+
+      - name: Download pcb2gcode v2.4.0
+        shell: pwsh
+        run: |
+          $url = "https://github.com/pcb2gcode/pcb2gcode/releases/download/v2.4.0/pcb2gcode-windows-2.4.0.zip"
+          Invoke-WebRequest -Uri $url -OutFile "pcb2gcode.zip"
+          Expand-Archive -Path "pcb2gcode.zip" -DestinationPath "pcb2gcode_temp"
+          New-Item -ItemType Directory -Force -Path "bin"
+          # Kopiere Inhalt in bin Ordner
+          Copy-Item -Path "pcb2gcode_temp\*" -Destination "bin" -Recurse -Force
+
+      - name: Build EXE with PyInstaller
+        shell: cmd /C CALL {0}
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name pcb-bridge-server --paths backend --hidden-import=uvicorn --hidden-import=fastapi --hidden-import=scipy.spatial.transform._rotation_groups --collect-all scipy backend/main.py
+
+      - name: Create Release Structure
+        shell: pwsh
+        run: |
+          $releaseDir = "dist\release"
+          New-Item -ItemType Directory -Force -Path $releaseDir
+          
+          # 1. EXE verschieben
+          Move-Item -Path "dist\pcb-bridge-server.exe" -Destination $releaseDir
+          
+          # 2. Binaries kopieren
+          Copy-Item -Path "bin" -Destination $releaseDir -Recurse
+          
+          # 3. Macros kopieren
+          if (Test-Path "macros") {
+            Copy-Item -Path "macros" -Destination $releaseDir -Recurse
+          }
+          
+          # 4. Data Ordner erstellen (wichtig für Laufzeit)
+          New-Item -ItemType Directory -Force -Path "$releaseDir\data"
+          
+          # 5. Lizenz & Readme
+          Set-Content -Path "$releaseDir\README.txt" -Value "PCB Bridge Standalone`r`n---------------------`r`nBackend for Eding CNC / OpenBuilds integration.`r`n`r`nThis package includes pcb2gcode v2.4.0 (GPLv3).`r`nSource: https://github.com/pcb2gcode/pcb2gcode"
+          Set-Content -Path "$releaseDir\LICENSE.txt" -Value "This project is distributed under its own license.`r`nIt bundles pcb2gcode which is licensed under GPLv3."
+          
+          # 6. Version Info
+          $verData = @{ 
+            version = "v0.1.0"
+            build_date = (Get-Date).ToString("yyyy-MM-dd") 
+            commit = "${{ github.sha }}"
+          } | ConvertTo-Json
+          Set-Content -Path "$releaseDir\version.json" -Value $verData
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcb-bridge-windows-standalone
+          path: dist/release/

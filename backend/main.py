@@ -7,13 +7,17 @@ import json
 import shutil
 import numpy as np
 import random
+import sys
 import uvicorn
 from typing import Optional
 from transformer import PcbTransformer
 from visualization import generate_heightmap_image, generate_gcode_image
 
 # Determine paths relative to this file (main.py)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 app = FastAPI(title="pcb-bridge API")
@@ -366,4 +370,7 @@ async def get_status():
     return {"status": "pcb-bridge is running"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    if getattr(sys, 'frozen', False):
+        uvicorn.run(app, host="127.0.0.1", port=8000)
+    else:
+        uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
