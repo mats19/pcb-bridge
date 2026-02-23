@@ -169,7 +169,7 @@ async def get_latest_process():
         
     # Load content of G-code files
     gcode_data = {}
-    for key in ["front", "outline", "drill"]:
+    for key in ["traces", "outline", "drill"]:
         path = state.get("files", {}).get(key)
         if path and os.path.exists(path):
             with open(path, "r") as f:
@@ -205,7 +205,7 @@ def get_config_value(key, default="?"):
 
 @app.post("/process/pcb")
 async def process_pcb(
-    front: UploadFile = File(None),
+    traces: UploadFile = File(None),
     outline: UploadFile = File(None),
     drill: UploadFile = File(None),
     offset_x: float = Form(0.0),
@@ -230,7 +230,7 @@ async def process_pcb(
             pass
     
     # Save files
-    front_path = None
+    traces_path = None
     outline_path = None
     drill_path = None
     filenames = {}
@@ -243,23 +243,23 @@ async def process_pcb(
         return old_state.get("filenames", {}).get(key)
     
     # Validierung: Prüfen, ob überhaupt Eingabedaten vorhanden sind
-    has_front = front is not None or (get_old_raw("front") and os.path.exists(get_old_raw("front")))
+    has_traces = traces is not None or (get_old_raw("traces") and os.path.exists(get_old_raw("traces")))
     has_outline = outline is not None or (get_old_raw("outline") and os.path.exists(get_old_raw("outline")))
     has_drill = drill is not None or (get_old_raw("drill") and os.path.exists(get_old_raw("drill")))
     
-    if not (has_front or has_outline or has_drill): 
+    if not (has_traces or has_outline or has_drill): 
         return {"status": "error", "message": "No input files provided and no previous state found. Please upload Gerber files."}
 
-    if front:
-        front_path = os.path.join(upload_dir, front.filename)
-        filenames["front"] = front.filename
-        raw_paths["front"] = front_path
-        with open(front_path, "wb") as buffer:
-            shutil.copyfileobj(front.file, buffer)
-    elif get_old_raw("front") and os.path.exists(get_old_raw("front")):
-        front_path = get_old_raw("front")
-        filenames["front"] = get_old_name("front")
-        raw_paths["front"] = front_path
+    if traces:
+        traces_path = os.path.join(upload_dir, traces.filename)
+        filenames["traces"] = traces.filename
+        raw_paths["traces"] = traces_path
+        with open(traces_path, "wb") as buffer:
+            shutil.copyfileobj(traces.file, buffer)
+    elif get_old_raw("traces") and os.path.exists(get_old_raw("traces")):
+        traces_path = get_old_raw("traces")
+        filenames["traces"] = get_old_name("traces")
+        raw_paths["traces"] = traces_path
             
     if outline:
         outline_path = os.path.join(upload_dir, outline.filename)
@@ -291,18 +291,18 @@ async def process_pcb(
         "offset_x": offset_x, 
         "offset_y": offset_y
     }
-    raw_files = transformer.run_pcb2gcode(front_path, outline_path, drill_path, config)
+    raw_files, pcb_params = transformer.run_pcb2gcode(traces_path, outline_path, drill_path, config)
     
     # 2. Apply leveling to all generated files
     leveled_files = {}
     gcode_contents = {}
     dimensions = {}
     
-    for key in ["front", "outline", "drill"]:
+    for key in ["traces", "outline", "drill"]:
         raw_path = raw_files.get(key)
         if raw_path and os.path.exists(raw_path):
             # Processing (Offset + Leveling + Dimensions)
-            gcode, dims = transformer.process_gcode(raw_path, offset_x, offset_y)
+            gcode, dims = transformer.process_gcode(raw_path, offset_x, offset_y, extra_header=pcb_params)
             
             if dims:
                 dimensions[key] = dims
@@ -310,7 +310,7 @@ async def process_pcb(
             # Header Injection: Insert tool change notice
             # pcb2gcode does this automatically for drills, but often not for Front/Outline
             header = ""
-            if key == "front":
+            if key == "traces":
                 dia = get_config_value("mill-diameters", "unknown")
                 header = f"(MSG, Please insert Trace Isolation Tool: {dia})\nM0\n"
             elif key == "outline":
@@ -330,7 +330,7 @@ async def process_pcb(
 
     # Generate G-code Visualization (All types)
     images = {}
-    for key in ["front", "outline", "drill"]:
+    for key in ["traces", "outline", "drill"]:
         if key in leveled_files:
             out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")
             if generate_gcode_image(leveled_files[key], out_path_gc):
@@ -356,7 +356,7 @@ async def create_visualizations():
         images["heightmap"] = out_path_hm
 
     # 2. Visualize Leveled G-code (All types)
-    for key in ["front", "outline", "drill"]:
+    for key in ["traces", "outline", "drill"]:
         gcode_path = os.path.join(DATA_DIR, "gcode_processed", f"pcb_leveled_{key}.gcode")
         if os.path.exists(gcode_path):
             out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")

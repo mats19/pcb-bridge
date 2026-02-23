@@ -8,8 +8,8 @@
                 <div class="cell-7">
                     <form id="gerberForm">
                         <div class="mb-2">
-                            <label>Front Copper (Gerber) <span id="lbl_front" class="text-muted text-small"></span></label>
-                            <input type="file" id="file_front" data-role="file" data-button-title="Select">
+                            <label>Traces (Gerber) <span id="lbl_traces" class="text-muted text-small"></span></label>
+                            <input type="file" id="file_traces" data-role="file" data-button-title="Select">
                         </div>
                         <div class="mb-2">
                             <label>Outline / Edge Cuts <span id="lbl_outline" class="text-muted text-small"></span></label>
@@ -19,6 +19,7 @@
                             <label>Drill File <span id="lbl_drill" class="text-muted text-small"></span></label>
                             <input type="file" id="file_drill" data-role="file" data-button-title="Select">
                         </div>
+
                         <div class="row mb-2">
                             <div class="cell-6">
                                 <label>Offset X [mm]</label>
@@ -64,8 +65,8 @@
         onShow: function(dialog) {
             var el = dialog.element;
             // Storage for loaded G-codes
-            var currentGcodeData = { front: null, outline: null, drill: null };
-            var currentDimensions = { front: null, outline: null, drill: null };
+            var currentGcodeData = { traces: null, outline: null, drill: null };
+            var currentDimensions = { traces: null, outline: null, drill: null };
 
             function updateEditor(gCode) {
                 // 1. Write code to editor
@@ -99,7 +100,7 @@
 
             function updateImage(type) {
                 // Add timestamp to force refresh
-                var t = type || 'front';
+                var t = type || 'traces';
                 var url = "http://127.0.0.1:8000/data/viz_gcode_" + t + ".png?t=" + new Date().getTime();
                 var img = el.find('#viz_img');
                 var link = el.find('#viz_link');
@@ -117,7 +118,7 @@
                 container.show();
 
                 var map = {
-                    'front': { label: 'Front (Traces)', icon: 'mif-flow-line', cls: 'primary' },
+                    'traces': { label: 'Traces', icon: 'mif-flow-line', cls: 'primary' },
                     'outline': { label: 'Outline (Cut)', icon: 'mif-cut', cls: 'alert' },
                     'drill': { label: 'Drill (Holes)', icon: 'mif-more-vert', cls: 'warning' }
                 };
@@ -145,10 +146,10 @@
                         currentDimensions = data.dimensions || {};
                         renderViewButtons();
                         
-                        // Automatically load Front if available
-                        if (currentGcodeData.front) {
-                            updateEditor(currentGcodeData.front);
-                            updateDimensionsInfo(currentDimensions.front);
+                        // Automatically load Traces if available
+                        if (currentGcodeData.traces) {
+                            updateEditor(currentGcodeData.traces);
+                            updateDimensionsInfo(currentDimensions.traces);
                             Metro.toast.create("Latest processing loaded.", null, 2000, "success");
                         }
                         
@@ -160,13 +161,13 @@
 
                         // Display filenames
                         if (data.filenames) {
-                            if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
+                            if(data.filenames.traces) el.find('#lbl_traces').text("(" + data.filenames.traces + ")");
                             if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
                             if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
                         }
 
                         // Show Image
-                        if (currentGcodeData.front) updateImage('front');
+                        if (currentGcodeData.traces) updateImage('traces');
                         else if (currentGcodeData.outline) updateImage('outline');
                         else if (currentGcodeData.drill) updateImage('drill');
                     }
@@ -189,14 +190,14 @@
                     // 1. Immediately hide/clear visual elements
                     el.find('#view_buttons').html('').hide();
                     el.find('#dimensions_info').html('').hide();
-                    el.find('#lbl_front').text("");
+                    el.find('#lbl_traces').text("");
                     el.find('#lbl_outline').text("");
                     el.find('#lbl_drill').text("");
                     el.find('#viz_container').hide();
                     
                     // 2. Clear internal data
-                    currentGcodeData = { front: null, outline: null, drill: null };
-                    currentDimensions = { front: null, outline: null, drill: null };
+                    currentGcodeData = { traces: null, outline: null, drill: null };
+                    currentDimensions = { traces: null, outline: null, drill: null };
                     
                     // 3. Clear editor
                     if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
@@ -206,7 +207,7 @@
                     // 4. Reset form and inputs (increased robustness)
                     try {
                         el.find('#gerberForm')[0].reset();
-                        ['#file_front', '#file_outline', '#file_drill'].forEach(id => {
+                        ['#file_traces', '#file_outline', '#file_drill'].forEach(id => {
                             var input = el.find(id);
                             input.val('');
                             var instance = Metro.getPlugin(input[0], 'file');
@@ -230,11 +231,11 @@
 
                 var formData = new FormData();
                 
-                var fFront = el.find('#file_front')[0].files[0];
+                var fTraces = el.find('#file_traces')[0].files[0];
                 var fOutline = el.find('#file_outline')[0].files[0];
                 var fDrill = el.find('#file_drill')[0].files[0];
 
-                if(fFront) formData.append("front", fFront);
+                if(fTraces) formData.append("traces", fTraces);
                 if(fOutline) formData.append("outline", fOutline);
                 if(fDrill) formData.append("drill", fDrill);
 
@@ -258,19 +259,19 @@
                         
                         // Update filenames (if newly uploaded)
                         if (data.filenames) {
-                            if(data.filenames.front) el.find('#lbl_front').text("(" + data.filenames.front + ")");
+                            if(data.filenames.traces) el.find('#lbl_traces').text("(" + data.filenames.traces + ")");
                             if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
                             if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
                         }
 
-                        // Show Front by default
-                        if (data.gcode.front) {
-                            updateEditor(data.gcode.front);
-                            updateDimensionsInfo(currentDimensions.front);
+                        // Show Traces by default
+                        if (data.gcode.traces) {
+                            updateEditor(data.gcode.traces);
+                            updateDimensionsInfo(currentDimensions.traces);
                         }
 
                         // Show Image
-                        if (data.gcode.front) updateImage('front');
+                        if (data.gcode.traces) updateImage('traces');
                         else if (data.gcode.outline) updateImage('outline');
                         else if (data.gcode.drill) updateImage('drill');
                     } else {

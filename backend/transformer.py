@@ -34,7 +34,7 @@ class PcbTransformer:
             
         self.config_file = os.path.join(project_root, "config", "pcb2gcode.conf")
 
-    def run_pcb2gcode(self, front_gerber, outline_gerber, drill_gerber, config):
+    def run_pcb2gcode(self, traces_gerber, outline_gerber, drill_gerber, config):
         """
         Calls pcb2gcode as a subprocess.
         """
@@ -66,12 +66,10 @@ class PcbTransformer:
 
         # 2. Remove ignored keys (Input/Output is set manually)
         ignore_keys = {"front", "back", "outline", "drill", "front-output", "back-output", "outline-output", "drill-output", "output-dir"}
+        
         for k in ignore_keys:
             params.pop(k, None)
             
-        # 3. Force flags
-        flags.add("zero-start")
-        
         # 6. Assemble command
         for k, v in params.items():
             cmd.extend([f"--{k}", v])
@@ -81,9 +79,9 @@ class PcbTransformer:
         
         # Input files and explicit outputs
         # We set explicit output filenames to overwrite config values
-        if front_gerber:
-            cmd.extend(["--front", front_gerber])
-            cmd.extend(["--front-output", "pcb_project_front.gcode"])
+        if traces_gerber:
+            cmd.extend(["--back", traces_gerber])
+            cmd.extend(["--back-output", "pcb_project_traces.gcode"])
         if outline_gerber:
             cmd.extend(["--outline", outline_gerber])
             cmd.extend(["--outline-output", "pcb_project_outline.gcode"])
@@ -100,14 +98,19 @@ class PcbTransformer:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"pcb2gcode failed: {e.stderr.decode()}")
             
+        # Prepare log params for header
+        log_params = params.copy()
+        for f in flags:
+            log_params[f] = "True (Flag)"
+            
         # Rückgabe der generierten Dateipfade
         return {
-            "front": os.path.join(output_dir, "pcb_project_front.gcode"),
+            "traces": os.path.join(output_dir, "pcb_project_traces.gcode"),
             "outline": os.path.join(output_dir, "pcb_project_outline.gcode"),
             "drill": os.path.join(output_dir, "pcb_project_drill.gcode")
-        }
+        }, log_params
 
-    def process_gcode(self, gcode_path, offset_x=0.0, offset_y=0.0):
+    def process_gcode(self, gcode_path, offset_x=0.0, offset_y=0.0, extra_header=None):
         """
         Reads G-code, applies offset, segments long G1 moves,
         and applies leveling.
@@ -130,6 +133,11 @@ class PcbTransformer:
             lines = f.readlines()
             
         new_lines = ["; Processed by pcb-bridge (Offset + Segmentation + Leveling)"]
+        if extra_header:
+            new_lines.append("; --- pcb2gcode Configuration ---")
+            for k, v in extra_header.items():
+                new_lines.append(f"; {k}={v}")
+            new_lines.append("; -------------------------------")
         
         current_x = 0.0
         current_y = 0.0
@@ -222,6 +230,8 @@ class PcbTransformer:
                 new_line_parts = []
                 if 'G0' in parts or 'G00' in parts: new_line_parts.append('G0')
                 elif 'G1' in parts or 'G01' in parts: new_line_parts.append('G1')
+                # Reconstruct command from other_parts (G0, G1, F, S, M...)
+                new_line_parts.extend(other_parts)
                 
                 if has_x: new_line_parts.append(f"X{target_x:.4f}")
                 if has_y: new_line_parts.append(f"Y{target_y:.4f}")
@@ -233,7 +243,6 @@ class PcbTransformer:
                     final_z_val = target_z + z_offset
                     new_line_parts.append(f"Z{final_z_val:.4f}")
                 
-                new_line_parts.extend(other_parts)
                 new_lines.append(" ".join(new_line_parts))
                 
                 # State update
