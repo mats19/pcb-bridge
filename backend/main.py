@@ -9,6 +9,7 @@ import numpy as np
 import random
 import sys
 import uvicorn
+import re
 from typing import Optional
 from transformer import PcbTransformer
 from visualization import generate_heightmap_image, generate_gcode_image
@@ -169,8 +170,8 @@ async def get_latest_process():
         
     # Load content of G-code files
     gcode_data = {}
-    for key in ["traces", "outline", "drill"]:
-        path = state.get("files", {}).get(key)
+    files_map = state.get("files", {})
+    for key, path in files_map.items():
         if path and os.path.exists(path):
             with open(path, "r") as f:
                 gcode_data[key] = f.read()
@@ -182,6 +183,7 @@ async def get_latest_process():
         "config": state.get("config"),
         "gcode": gcode_data,
         "dimensions": state.get("dimensions"),
+        "tool_metadata": state.get("tool_metadata", {}),
         "filenames": state.get("filenames"),
         "images": state.get("images")
     }
@@ -202,6 +204,59 @@ def get_config_value(key, default="?"):
     except Exception:
         pass
     return default
+
+def extract_drill_diameter(gcode_text, tool_id):
+    """Attempts to find the tool diameter in the G-code header."""
+    # tool_id is e.g. "T1"
+    t_num_str = tool_id.replace('T', '')
+    
+    if not gcode_text: return "?"
+
+    # Regex 1: ( T01 | 0.800mm ) - Standard pcb2gcode header
+    pattern1 = r"\(\s*T0?{}\s*\|\s*([\d\.]+)\s*mm".format(re.escape(t_num_str))
+    match = re.search(pattern1, gcode_text, re.IGNORECASE)
+    if match:
+        return f"{float(match.group(1)):g}mm"
+
+    # Regex 2: Tool 01: 0.8mm
+    pattern2 = r"Tool\s*0?{}\s*[:|]\s*([\d\.]+)\s*mm".format(re.escape(t_num_str))
+    match = re.search(pattern2, gcode_text, re.IGNORECASE)
+    if match:
+        return f"{float(match.group(1)):g}mm"
+
+    # Regex 3: T1C0.800 (Standard G-code tool definition line)
+    pattern3 = r"T0?{}\s*C\s*([\d\.]+)".format(re.escape(t_num_str))
+    match = re.search(pattern3, gcode_text, re.IGNORECASE)
+    if match:
+        return f"{float(match.group(1)):g}mm"
+
+    return "?"
+
+def parse_excellon_tools(file_path):
+    """
+    Parses an Excellon drill file to extract tool definitions.
+    Returns a dict {tool_number: diameter_mm}.
+    """
+    tools = {}
+    is_inch = False 
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            
+        if re.search(r"(INCH|M72)", content, re.IGNORECASE):
+            is_inch = True
+        
+        pattern = r"T(\d+)\s*C([\d\.]+)"
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        
+        for t_id, size in matches:
+            val = float(size)
+            if is_inch: val *= 25.4
+            tools[int(t_id)] = val
+    except Exception:
+        pass
+    return tools
 
 @app.post("/process/pcb")
 async def process_pcb(
@@ -293,10 +348,16 @@ async def process_pcb(
     }
     raw_files, pcb_params = transformer.run_pcb2gcode(traces_path, outline_path, drill_path, config)
     
+    # Parse requested tools from Drill file if available
+    requested_tools = {}
+    if drill_path and os.path.exists(drill_path):
+        requested_tools = parse_excellon_tools(drill_path)
+
     # 2. Apply leveling to all generated files
     leveled_files = {}
     gcode_contents = {}
     dimensions = {}
+    tool_metadata = {}
     
     for key in ["traces", "outline", "drill"]:
         raw_path = raw_files.get(key)
@@ -327,20 +388,64 @@ async def process_pcb(
             
             leveled_files[key] = out_path
             gcode_contents[key] = gcode
+            
+            # Metadata for Traces/Outline
+            if key == "traces":
+                tool_metadata["traces"] = get_config_value("mill-diameters", "?")
+            elif key == "outline":
+                tool_metadata["outline"] = get_config_value("cutter-diameter", "?")
+            
+            # Split Drill Files for Manual Tool Change
+            if key == "drill":
+                split_files = transformer.split_gcode_by_tool(gcode)
+                if split_files:
+                    # Remove original drill file from the main lists to hide it from UI
+                    drill_dims = dimensions.get("drill")
+                    del leveled_files["drill"]
+                    del gcode_contents["drill"]
+                    if "drill" in dimensions:
+                        del dimensions["drill"]
+
+                    for tool, content in split_files.items():
+                        sub_key = f"drill_{tool}"
+                        sub_path = os.path.join(processed_dir, f"pcb_leveled_{sub_key}.gcode")
+                        with open(sub_path, "w") as f:
+                            f.write(content)
+                        leveled_files[sub_key] = sub_path
+                        gcode_contents[sub_key] = content
+                        if drill_dims:
+                            dimensions[sub_key] = drill_dims
+                        
+                        # Extract Diameter
+                        actual_dia_str = extract_drill_diameter(content, tool)
+                        meta_label = actual_dia_str
+                        
+                        # Try to get requested tool info
+                        req_mm = None
+                        try:
+                            t_num = int(tool.replace('T', ''))
+                            if t_num in requested_tools:
+                                req_mm = requested_tools[t_num]
+                        except Exception:
+                            pass
+
+                        if req_mm is not None:
+                            meta_label = f"{req_mm:g}mm"
+                        
+                        tool_metadata[sub_key] = meta_label
 
     # Generate G-code Visualization (All types)
     images = {}
-    for key in ["traces", "outline", "drill"]:
-        if key in leveled_files:
-            out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")
-            if generate_gcode_image(leveled_files[key], out_path_gc):
-                images[f"gcode_{key}"] = out_path_gc
+    for key, path in leveled_files.items():
+        out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")
+        if generate_gcode_image(path, out_path_gc):
+            images[f"gcode_{key}"] = out_path_gc
 
     # Save state for reload
     with open(state_file, "w") as f:
-        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "filenames": filenames, "raw_paths": raw_paths, "images": images}, f, indent=2)
+        json.dump({"config": config, "files": leveled_files, "dimensions": dimensions, "tool_metadata": tool_metadata, "filenames": filenames, "raw_paths": raw_paths, "images": images}, f, indent=2)
     
-    return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "filenames": filenames, "images": images}
+    return {"status": "success", "files": leveled_files, "gcode": gcode_contents, "dimensions": dimensions, "tool_metadata": tool_metadata, "filenames": filenames, "images": images}
 
 @app.post("/visualize/create")
 async def create_visualizations():

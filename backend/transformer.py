@@ -94,7 +94,9 @@ class PcbTransformer:
         
         # Execute process
         try:
-            subprocess.run(cmd, check=True, capture_output=True)
+            print(f"Executing pcb2gcode: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True)
+            print("pcb2gcode output:\n", result.stderr.decode())
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"pcb2gcode failed: {e.stderr.decode()}")
             
@@ -269,3 +271,73 @@ class PcbTransformer:
             dims = {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y, "width": max_x - min_x, "height": max_y - min_y, "min_z": min_z, "max_z": max_z}
             
         return "\n".join(new_lines), dims
+
+    def split_gcode_by_tool(self, gcode_content):
+        """
+        Splits a G-code string into a dictionary { "T1": "content...", "T2": "content..." }
+        Removes active M6 commands from the split files to allow manual operation.
+        """
+        lines = gcode_content.splitlines()
+        header = []
+        footer = []
+        tools = {} 
+        
+        current_tool = None
+        current_lines = []
+        
+        for line in lines:
+            sline = line.strip()
+            if not sline: continue
+            
+            # Check for Footer (M30 or %)
+            if "M30" in sline or sline == "%":
+                footer.append(line)
+                continue
+            
+            # Check for Tool Definition (Txx)
+            code_part = sline.split(';')[0].split('(')[0]
+            new_tool = None
+            if 'T' in code_part:
+                parts = code_part.split()
+                for p in parts:
+                    if p.startswith('T') and len(p) > 1 and p[1:].isdigit():
+                        new_tool = p
+                        break
+            
+            if new_tool:
+                if current_tool:
+                    tools[current_tool] = current_lines
+                current_tool = new_tool
+                current_lines = []
+                current_lines.append(f"; {line} (Split: Tool {new_tool})")
+                continue
+            
+            if 'M6' in code_part:
+                if current_tool:
+                    current_lines.append(f"; {line} (Split: M6 removed)")
+                else:
+                    header.append(f"; {line} (Split: M6 removed)")
+                continue
+                
+            if current_tool:
+                current_lines.append(line)
+            else:
+                header.append(line)
+                
+        if current_tool:
+            tools[current_tool] = current_lines
+            
+        if not tools:
+            return {}
+            
+        results = {}
+        for t, body in tools.items():
+            content = []
+            content.extend(header)
+            content.append(f"(MSG, Change Tool to {t})")
+            content.append("M0 ; Pause for manual tool change") 
+            content.extend(body)
+            content.extend(footer)
+            results[t] = "\n".join(content)
+            
+        return results

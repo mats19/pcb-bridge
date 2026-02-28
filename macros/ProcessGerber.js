@@ -37,7 +37,7 @@
                         <button class="button small warning outline" id="btn_reset" title="Reset All"><span class="mif-bin"></span> Reset</button>
                     </div>
 
-                    <div class="d-flex flex-row w-100 mb-2" id="view_buttons" style="display:none; gap: 5px;"></div>
+                    <div class="d-flex flex-row flex-wrap w-100 mb-2" id="view_buttons" style="display:none; gap: 5px;"></div>
 
                     <div class="mt-2">
                         <button class="button success w-100" id="btn_process">
@@ -67,6 +67,7 @@
             // Storage for loaded G-codes
             var currentGcodeData = { traces: null, outline: null, drill: null };
             var currentDimensions = { traces: null, outline: null, drill: null };
+            var currentToolMetadata = {};
 
             function updateEditor(gCode) {
                 // 1. Write code to editor
@@ -119,20 +120,43 @@
 
                 var map = {
                     'traces': { label: 'Traces', icon: 'mif-flow-line', cls: 'primary' },
-                    'outline': { label: 'Outline (Cut)', icon: 'mif-cut', cls: 'alert' },
+                    'outline': { label: 'Outline', icon: 'mif-cut', cls: 'alert' },
                     'drill': { label: 'Drill (Holes)', icon: 'mif-more-vert', cls: 'warning' }
                 };
 
-                Object.keys(currentGcodeData).forEach(key => {
+                var keys = Object.keys(currentGcodeData).sort((a, b) => {
+                    var order = {'traces': 1, 'outline': 2, 'drill': 3};
+                    var oa = order[a] || 4;
+                    var ob = order[b] || 4;
+                    if (oa !== ob) return oa - ob;
+                    return a.localeCompare(b);
+                });
+
+                keys.forEach(key => {
                     if (currentGcodeData[key]) {
-                        var btn = $(`<button class="button small ${map[key].cls} flex-fill"><span class="${map[key].icon}"></span> ${map[key].label}</button>`);
-                        btn.on('click', function() {
-                            updateEditor(currentGcodeData[key]);
-                            updateDimensionsInfo(currentDimensions[key]);
-                            updateImage(key);
-                            Metro.toast.create(map[key].label + " loaded.", null, 1000, "info");
-                        });
-                        container.append(btn);
+                        var config = map[key];
+                        var meta = currentToolMetadata[key];
+                        
+                        if (!config && key.startsWith('drill_')) {
+                            var tName = key.replace('drill_', '');
+                            config = { label: 'Holes ' + tName, icon: 'mif-more-vert', cls: 'secondary' };
+                        }
+
+                        if (config) {
+                            var labelText = config.label;
+                            if (meta) {
+                                labelText += " (" + meta + ")";
+                            }
+                            
+                            var btn = $(`<button class="button small ${config.cls} flex-fill"><span class="${config.icon}"></span> ${labelText}</button>`);
+                            btn.on('click', function() {
+                                updateEditor(currentGcodeData[key]);
+                                updateDimensionsInfo(currentDimensions[key]);
+                                updateImage(key);
+                                Metro.toast.create(config.label + " loaded.", null, 1000, "info");
+                            });
+                            container.append(btn);
+                        }
                     }
                 });
             }
@@ -144,6 +168,7 @@
                     if (data.status === "success" && data.gcode) {
                         currentGcodeData = data.gcode;
                         currentDimensions = data.dimensions || {};
+                        currentToolMetadata = data.tool_metadata || {};
                         renderViewButtons();
                         
                         // Automatically load Traces if available
@@ -198,6 +223,7 @@
                     // 2. Clear internal data
                     currentGcodeData = { traces: null, outline: null, drill: null };
                     currentDimensions = { traces: null, outline: null, drill: null };
+                    currentToolMetadata = {};
                     
                     // 3. Clear editor
                     if (typeof editor !== 'undefined' && editor.session) editor.session.setValue("");
@@ -255,6 +281,7 @@
                         
                         currentGcodeData = data.gcode;
                         currentDimensions = data.dimensions || {};
+                        currentToolMetadata = data.tool_metadata || {};
                         renderViewButtons();
                         
                         // Update filenames (if newly uploaded)
