@@ -9,7 +9,6 @@ import numpy as np
 import random
 import sys
 import uvicorn
-import re
 from typing import Optional
 from transformer import PcbTransformer
 from visualization import generate_heightmap_image, generate_gcode_image
@@ -205,59 +204,6 @@ def get_config_value(key, default="?"):
         pass
     return default
 
-def extract_drill_diameter(gcode_text, tool_id):
-    """Attempts to find the tool diameter in the G-code header."""
-    # tool_id is e.g. "T1"
-    t_num_str = tool_id.replace('T', '')
-    
-    if not gcode_text: return "?"
-
-    # Regex 1: ( T01 | 0.800mm ) - Standard pcb2gcode header
-    pattern1 = r"\(\s*T0?{}\s*\|\s*([\d\.]+)\s*mm".format(re.escape(t_num_str))
-    match = re.search(pattern1, gcode_text, re.IGNORECASE)
-    if match:
-        return f"{float(match.group(1)):g}mm"
-
-    # Regex 2: Tool 01: 0.8mm
-    pattern2 = r"Tool\s*0?{}\s*[:|]\s*([\d\.]+)\s*mm".format(re.escape(t_num_str))
-    match = re.search(pattern2, gcode_text, re.IGNORECASE)
-    if match:
-        return f"{float(match.group(1)):g}mm"
-
-    # Regex 3: T1C0.800 (Standard G-code tool definition line)
-    pattern3 = r"T0?{}\s*C\s*([\d\.]+)".format(re.escape(t_num_str))
-    match = re.search(pattern3, gcode_text, re.IGNORECASE)
-    if match:
-        return f"{float(match.group(1)):g}mm"
-
-    return "?"
-
-def parse_excellon_tools(file_path):
-    """
-    Parses an Excellon drill file to extract tool definitions.
-    Returns a dict {tool_number: diameter_mm}.
-    """
-    tools = {}
-    is_inch = False 
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-            
-        if re.search(r"(INCH|M72)", content, re.IGNORECASE):
-            is_inch = True
-        
-        pattern = r"T(\d+)\s*C([\d\.]+)"
-        matches = re.findall(pattern, content, re.IGNORECASE)
-        
-        for t_id, size in matches:
-            val = float(size)
-            if is_inch: val *= 25.4
-            tools[int(t_id)] = val
-    except Exception:
-        pass
-    return tools
-
 @app.post("/process/pcb")
 async def process_pcb(
     traces: UploadFile = File(None),
@@ -351,7 +297,7 @@ async def process_pcb(
     # Parse requested tools from Drill file if available
     requested_tools = {}
     if drill_path and os.path.exists(drill_path):
-        requested_tools = parse_excellon_tools(drill_path)
+        requested_tools = transformer.parse_excellon_tools(drill_path)
 
     # 2. Apply leveling to all generated files
     leveled_files = {}
@@ -373,10 +319,10 @@ async def process_pcb(
             header = ""
             if key == "traces":
                 dia = get_config_value("mill-diameters", "unknown")
-                header = f"(MSG, Please insert Trace Isolation Tool: {dia})\nM0\n"
+                header = f"(MSG, Please insert Trace Isolation Tool: {dia})\n"
             elif key == "outline":
                 dia = get_config_value("cutter-diameter", "unknown")
-                header = f"(MSG, Please insert Outline Cutter: {dia})\nM0\n"
+                header = f"(MSG, Please insert Outline Cutter: {dia})\n"
             
             if header:
                 gcode = header + gcode
@@ -417,7 +363,7 @@ async def process_pcb(
                             dimensions[sub_key] = drill_dims
                         
                         # Extract Diameter
-                        actual_dia_str = extract_drill_diameter(content, tool)
+                        actual_dia_str = transformer.extract_drill_diameter(content, tool)
                         meta_label = actual_dia_str
                         
                         # Try to get requested tool info

@@ -5,6 +5,7 @@ import numpy as np
 from scipy.interpolate import griddata
 import platform
 import sys
+import re
 
 class PcbTransformer:
     def __init__(self, data_dir=None):
@@ -190,6 +191,8 @@ class PcbTransformer:
                     target_z = float(part[1:])
                     has_z = True
                 elif not part.startswith('G'): # Everything that is not a G-command or coordinate (F, S, M, T)
+                    # Filter out Stop (M0) and Tool Change (M6) commands
+                    if part in ['M0', 'M00', 'M6', 'M06']: continue
                     other_parts.append(part)
                 elif part not in ['G0', 'G00', 'G1', 'G01']: # Other G-commands (G21, G90 etc)
                     other_parts.append(part)
@@ -245,6 +248,10 @@ class PcbTransformer:
                     final_z_val = target_z + z_offset
                     new_line_parts.append(f"Z{final_z_val:.4f}")
                 
+                # If line became empty (e.g. only contained M6 which was filtered), skip it
+                if not new_line_parts:
+                    continue
+
                 new_lines.append(" ".join(new_line_parts))
                 
                 # State update
@@ -274,8 +281,7 @@ class PcbTransformer:
 
     def split_gcode_by_tool(self, gcode_content):
         """
-        Splits a G-code string into a dictionary { "T1": "content...", "T2": "content..." }
-        Removes active M6 commands from the split files to allow manual operation.
+        Splits a G-code string into a dictionary { "T1": "content...", "T2": "content..." }.
         """
         lines = gcode_content.splitlines()
         header = []
@@ -312,13 +318,6 @@ class PcbTransformer:
                 current_lines.append(f"; {line} (Split: Tool {new_tool})")
                 continue
             
-            if 'M6' in code_part:
-                if current_tool:
-                    current_lines.append(f"; {line} (Split: M6 removed)")
-                else:
-                    header.append(f"; {line} (Split: M6 removed)")
-                continue
-                
             if current_tool:
                 current_lines.append(line)
             else:
@@ -335,9 +334,55 @@ class PcbTransformer:
             content = []
             content.extend(header)
             content.append(f"(MSG, Change Tool to {t})")
-            content.append("M0 ; Pause for manual tool change") 
             content.extend(body)
             content.extend(footer)
             results[t] = "\n".join(content)
             
         return results
+
+    def parse_excellon_tools(self, file_path):
+        """
+        Parses an Excellon drill file to extract tool definitions.
+        Returns a dict {tool_number: diameter_mm}.
+        """
+        tools = {}
+        is_inch = False 
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                
+            if re.search(r"(INCH|M72)", content, re.IGNORECASE):
+                is_inch = True
+            
+            pattern = r"T(\d+)\s*C([\d\.]+)"
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            
+            for t_id, size in matches:
+                val = float(size)
+                if is_inch: val *= 25.4
+                tools[int(t_id)] = val
+        except Exception:
+            pass
+        return tools
+
+    def extract_drill_diameter(self, gcode_text, tool_id):
+        """Attempts to find the tool diameter in the G-code header."""
+        # tool_id is e.g. "T1"
+        t_num_str = tool_id.replace('T', '')
+        
+        if not gcode_text: return "?"
+
+        # Regex strategies to find diameter
+        patterns = [
+            r"\(\s*T0?{}\s*\|\s*([\d\.]+)\s*mm".format(re.escape(t_num_str)), # ( T1 | 0.8mm )
+            r"Tool\s*0?{}\s*[:|]\s*([\d\.]+)\s*mm".format(re.escape(t_num_str)), # Tool 1: 0.8mm
+            r"T0?{}\s*C\s*([\d\.]+)".format(re.escape(t_num_str)) # T1C0.8
+        ]
+
+        for p in patterns:
+            match = re.search(p, gcode_text, re.IGNORECASE)
+            if match:
+                return f"{float(match.group(1)):g}mm"
+
+        return "?"
