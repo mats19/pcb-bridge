@@ -37,16 +37,8 @@ class PocketingGenerator:
             f_pocket = float(config.get("pocket-feed", "500mm/min").replace("mm/min", ""))
             s_speed = int(config.get("spindle-speed", "24000rpm").replace("rpm", ""))
             stepover_ratio = float(config.get("stepover", "0.5"))
-            
-            # Neue Korrekturparameter
-            scale_factor = float(config.get("scale", "1.0"))
-            mirror_x = int(config.get("mirror-x", "0"))
-            mirror_y = int(config.get("mirror-y", "0"))
-            off_x = float(config.get("offset-x", "0.0").replace("mm", ""))
-            off_y = float(config.get("offset-y", "0.0").replace("mm", ""))
         except ValueError:
             tool_dia, z_pocket, f_pocket, s_speed, stepover_ratio = 5.0, -0.1, 500, 24000, 0.5
-            scale_factor, mirror_x, mirror_y, off_x, off_y = 1.0, 0, 0, 0.0, 0.0
 
         tool_radius = tool_dia / 2.0
         stepover_mm = tool_dia * stepover_ratio
@@ -83,17 +75,8 @@ class PocketingGenerator:
                     poly = Polygon(pts)
                     
                     # Korrekturen anwenden
-                    if scale_factor != 1.0:
-                        poly = shapely.affinity.scale(poly, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
-                        
-                    if mirror_x == 1 or auto_mirror_x:
+                    if auto_mirror_x:
                         poly = shapely.affinity.scale(poly, xfact=-1.0, yfact=1.0, origin=(0, 0))
-                        
-                    if mirror_y == 1:
-                        poly = shapely.affinity.scale(poly, xfact=1.0, yfact=-1.0, origin=(0, 0))
-                        
-                    if off_x != 0.0 or off_y != 0.0:
-                        poly = shapely.affinity.translate(poly, xoff=off_x, yoff=off_y)
                         
                     polygons.append(poly)
 
