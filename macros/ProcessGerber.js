@@ -8,17 +8,13 @@
                 <div class="cell-7">
                     <form id="gerberForm">
                         <div class="mb-2">
-                            <label>Traces (Gerber) <span id="lbl_traces" class="text-muted text-small"></span></label>
-                            <input type="file" id="file_traces" data-role="file" data-button-title="Select">
+                        <label>Projekt-Ordner auswählen</label>
+                        <input type="file" id="folder_input" webkitdirectory directory multiple data-role="file" data-button-title="Ordner öffnen">
                         </div>
-                        <div class="mb-2">
-                            <label>Outline / Edge Cuts <span id="lbl_outline" class="text-muted text-small"></span></label>
-                            <input type="file" id="file_outline" data-role="file" data-button-title="Select">
-                        </div>
-                        <div class="mb-2">
-                            <label>Drill File <span id="lbl_drill" class="text-muted text-small"></span></label>
-                            <input type="file" id="file_drill" data-role="file" data-button-title="Select">
-                        </div>
+                    
+                    <div id="detected_files" class="text-small text-muted mb-2 border p-2 bg-light" style="display:none;">
+                        <!-- Detected files will be listed here -->
+                    </div>
 
                         <div class="row mb-2">
                             <div class="cell-6">
@@ -64,9 +60,11 @@
         actions: [{ caption: "Close", cls: "js-dialog-close" }],
         onShow: function(dialog) {
             var el = dialog.element;
+            var pendingFiles = { traces: null, outline: null, drill: null, user_drawings: null };
+            
             // Storage for loaded G-codes
-            var currentGcodeData = { traces: null, outline: null, drill: null };
-            var currentDimensions = { traces: null, outline: null, drill: null };
+            var currentGcodeData = { traces: null, outline: null, drill: null, user_drawings: null };
+            var currentDimensions = { traces: null, outline: null, drill: null, user_drawings: null };
             var currentToolMetadata = {};
 
             function updateEditor(gCode) {
@@ -120,14 +118,15 @@
 
                 var map = {
                     'traces': { label: 'Traces', icon: 'mif-flow-line', cls: 'primary' },
+                    'user_drawings': { label: 'Pocketing', icon: 'mif-layers', cls: 'info' },
                     'outline': { label: 'Outline', icon: 'mif-cut', cls: 'alert' },
-                    'drill': { label: 'Drill (Holes)', icon: 'mif-more-vert', cls: 'warning' }
+                    'drill': { label: 'Drill', icon: 'mif-more-vert', cls: 'warning' }
                 };
 
                 var keys = Object.keys(currentGcodeData).sort((a, b) => {
-                    var order = {'traces': 1, 'outline': 2, 'drill': 3};
+                    var order = {'traces': 1, 'user_drawings': 2, 'outline': 3, 'drill': 4};
                     var oa = order[a] || 4;
-                    var ob = order[b] || 4;
+                    var ob = order[b] || 5;
                     if (oa !== ob) return oa - ob;
                     return a.localeCompare(b);
                 });
@@ -161,6 +160,28 @@
                 });
             }
 
+            // Handle folder selection
+            el.find('#folder_input').on('change', function(e) {
+                var files = e.target.files;
+                pendingFiles = { traces: null, outline: null, drill: null, user_drawings: null };
+                var html = "<b>Gefundene Dateien:</b><br>";
+                
+                for(var i=0; i<files.length; i++) {
+                    var f = files[i];
+                    if (f.name.endsWith('-B_Cu.gbr')) pendingFiles.traces = f;
+                    else if (f.name.endsWith('-Edge_Cuts.gbr')) pendingFiles.outline = f;
+                    else if (f.name.endsWith('.drl')) pendingFiles.drill = f;
+                    else if (f.name.endsWith('-User_Drawings.gbr')) pendingFiles.user_drawings = f;
+                }
+                
+                if(pendingFiles.traces) html += `<span class="fg-green mif-checkmark"></span> Traces: ${pendingFiles.traces.name}<br>`;
+                if(pendingFiles.outline) html += `<span class="fg-green mif-checkmark"></span> Outline: ${pendingFiles.outline.name}<br>`;
+                if(pendingFiles.drill) html += `<span class="fg-green mif-checkmark"></span> Drill: ${pendingFiles.drill.name}<br>`;
+                if(pendingFiles.user_drawings) html += `<span class="fg-green mif-checkmark"></span> User Drawings: ${pendingFiles.user_drawings.name}<br>`;
+                
+                el.find('#detected_files').html(html).show();
+            });
+
             function loadLatestData() {
                 fetch('http://127.0.0.1:8000/process/latest')
                 .then(r => r.json())
@@ -186,13 +207,17 @@
 
                         // Display filenames
                         if (data.filenames) {
-                            if(data.filenames.traces) el.find('#lbl_traces').text("(" + data.filenames.traces + ")");
-                            if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
-                            if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
+                        var html = "<b>Zuletzt geladene Dateien:</b><br>";
+                        if(data.filenames.traces) html += `<span class="fg-green mif-checkmark"></span> Traces: ${data.filenames.traces}<br>`;
+                        if(data.filenames.outline) html += `<span class="fg-green mif-checkmark"></span> Outline: ${data.filenames.outline}<br>`;
+                        if(data.filenames.drill) html += `<span class="fg-green mif-checkmark"></span> Drill: ${data.filenames.drill}<br>`;
+                        if(data.filenames.user_drawings) html += `<span class="fg-green mif-checkmark"></span> User Drawings: ${data.filenames.user_drawings}<br>`;
+                        el.find('#detected_files').html(html).show();
                         }
 
                         // Show Image
                         if (currentGcodeData.traces) updateImage('traces');
+                    else if (currentGcodeData.user_drawings) updateImage('user_drawings');
                         else if (currentGcodeData.outline) updateImage('outline');
                         else if (currentGcodeData.drill) updateImage('drill');
                     }
@@ -215,14 +240,13 @@
                     // 1. Immediately hide/clear visual elements
                     el.find('#view_buttons').html('').hide();
                     el.find('#dimensions_info').html('').hide();
-                    el.find('#lbl_traces').text("");
-                    el.find('#lbl_outline').text("");
-                    el.find('#lbl_drill').text("");
+                    el.find('#detected_files').html('').hide();
+                    pendingFiles = { traces: null, outline: null, drill: null, user_drawings: null };
                     el.find('#viz_container').hide();
                     
                     // 2. Clear internal data
-                    currentGcodeData = { traces: null, outline: null, drill: null };
-                    currentDimensions = { traces: null, outline: null, drill: null };
+                    currentGcodeData = { traces: null, outline: null, drill: null, user_drawings: null };
+                    currentDimensions = { traces: null, outline: null, drill: null, user_drawings: null };
                     currentToolMetadata = {};
                     
                     // 3. Clear editor
@@ -232,8 +256,9 @@
 
                     // 4. Reset form and inputs (increased robustness)
                     try {
-                        el.find('#gerberForm')[0].reset();
-                        ['#file_traces', '#file_outline', '#file_drill'].forEach(id => {
+                        var form = el.find('#gerberForm')[0];
+                        if (form) form.reset();
+                        ['#folder_input'].forEach(id => {
                             var input = el.find(id);
                             input.val('');
                             var instance = Metro.getPlugin(input[0], 'file');
@@ -256,14 +281,10 @@
                 closeBtn.addClass('disabled').css('pointer-events', 'none');
 
                 var formData = new FormData();
-                
-                var fTraces = el.find('#file_traces')[0].files[0];
-                var fOutline = el.find('#file_outline')[0].files[0];
-                var fDrill = el.find('#file_drill')[0].files[0];
-
-                if(fTraces) formData.append("traces", fTraces);
-                if(fOutline) formData.append("outline", fOutline);
-                if(fDrill) formData.append("drill", fDrill);
+                if(pendingFiles.traces) formData.append("traces", pendingFiles.traces);
+                if(pendingFiles.outline) formData.append("outline", pendingFiles.outline);
+                if(pendingFiles.drill) formData.append("drill", pendingFiles.drill);
+                if(pendingFiles.user_drawings) formData.append("user_drawings", pendingFiles.user_drawings);
 
                 formData.append("offset_x", el.find('#val_offset_x').val());
                 formData.append("offset_y", el.find('#val_offset_y').val());
@@ -286,9 +307,12 @@
                         
                         // Update filenames (if newly uploaded)
                         if (data.filenames) {
-                            if(data.filenames.traces) el.find('#lbl_traces').text("(" + data.filenames.traces + ")");
-                            if(data.filenames.outline) el.find('#lbl_outline').text("(" + data.filenames.outline + ")");
-                            if(data.filenames.drill) el.find('#lbl_drill').text("(" + data.filenames.drill + ")");
+                        var html = "<b>Geladene Dateien:</b><br>";
+                        if(data.filenames.traces) html += `<span class="fg-green mif-checkmark"></span> Traces: ${data.filenames.traces}<br>`;
+                        if(data.filenames.outline) html += `<span class="fg-green mif-checkmark"></span> Outline: ${data.filenames.outline}<br>`;
+                        if(data.filenames.drill) html += `<span class="fg-green mif-checkmark"></span> Drill: ${data.filenames.drill}<br>`;
+                        if(data.filenames.user_drawings) html += `<span class="fg-green mif-checkmark"></span> User Drawings: ${data.filenames.user_drawings}<br>`;
+                        el.find('#detected_files').html(html).show();
                         }
 
                         // Show Traces by default
@@ -299,6 +323,7 @@
 
                         // Show Image
                         if (data.gcode.traces) updateImage('traces');
+                    else if (data.gcode.user_drawings) updateImage('user_drawings');
                         else if (data.gcode.outline) updateImage('outline');
                         else if (data.gcode.drill) updateImage('drill');
                     } else {

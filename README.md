@@ -13,14 +13,15 @@ Integration of pcb2gcode and Height-Map-Compensation for OpenBuilds CONTROL.
 
 ## Concept
 This project bridges the web interface of OpenBuilds CONTROL with powerful Python tools.
-1. **Gerber Upload**: Gerber files are sent to the backend via a JS macro.
-2. **Processing**: The backend uses `pcb2gcode` to calculate isolation milling paths.
+1. **Gerber Upload**: A complete project folder is selected and relevant Gerber files are automatically matched and sent to the backend via a JS macro.
+2. **Processing**: The backend uses `pcb2gcode` for isolation paths and a custom Python algorithm for pocketing (clearing copper).
 3. **Leveling**: A previously created heightmap (JSON) is used to warp the Z-code of the milling paths to compensate for PCB unevenness.
-4. **Output**: The generated G-code (Front, Outline, Drill) is loaded directly into the OpenBuilds CONTROL editor and visualized.
+4. **Output**: The generated G-code (Front, Pocketing, Outline, Drill) is loaded directly into the OpenBuilds CONTROL editor and visualized.
 
 ## Features
 - **Multi-Layer Support**: Separate processing and visualization of Front (Traces), Outline (Cutout), and Drill (Holes).
 - **Auto-Leveling**: Application of a heightmap to the G-code to compensate for PCB warping.
+- **Pocketing (User Drawings)**: Automatic generation of zig-zag milling paths to clear defined copper areas based on Gerber polygons.
 - **Offset**: Zero-point shift (Offset X/Y) directly during processing.
 - **Segmentation**: Automatic subdivision of long moves (>1mm) for precise leveling even on straight traces.
 - **Statistics**: Display of dimensions (Bounding Box) and Z-ranges for each file.
@@ -32,6 +33,7 @@ This project bridges the web interface of OpenBuilds CONTROL with powerful Pytho
 - **FastAPI**: Python web framework for the API.
 - **pcb2gcode**: Command-line tool for converting Gerber to G-code.
 - **NumPy / SciPy**: For mathematical interpolation of the heightmap.
+- **Shapely & pcb-tools**: For extracting Gerber polygons and computing offset/zig-zag paths for pocketing.
 - **Metro UI**: UI framework within OpenBuilds CONTROL for the dialogs.
 
 ## Setup

@@ -204,10 +204,28 @@ def get_config_value(key, default="?"):
         pass
     return default
 
+def get_ud_config_value(key, default="?"):
+    """Reads a value from user_drawings.conf"""
+    try:
+        config_path = os.path.join(os.path.dirname(BASE_DIR), "config", "user_drawings.conf")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"): continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        if k.strip() == key:
+                            return v.split("#")[0].strip()
+    except Exception:
+        pass
+    return default
+
 @app.post("/process/pcb")
 async def process_pcb(
     traces: UploadFile = File(None),
     outline: UploadFile = File(None),
+    user_drawings: UploadFile = File(None),
     drill: UploadFile = File(None),
     offset_x: float = Form(0.0),
     offset_y: float = Form(0.0)
@@ -246,14 +264,16 @@ async def process_pcb(
     # Validierung: Prüfen, ob überhaupt Eingabedaten vorhanden sind
     has_traces = traces is not None or (get_old_raw("traces") and os.path.exists(get_old_raw("traces")))
     has_outline = outline is not None or (get_old_raw("outline") and os.path.exists(get_old_raw("outline")))
+    has_ud = user_drawings is not None or (get_old_raw("user_drawings") and os.path.exists(get_old_raw("user_drawings")))
     has_drill = drill is not None or (get_old_raw("drill") and os.path.exists(get_old_raw("drill")))
     
-    if not (has_traces or has_outline or has_drill): 
+    if not (has_traces or has_outline or has_drill or has_ud): 
         return {"status": "error", "message": "No input files provided and no previous state found. Please upload Gerber files."}
 
     if traces:
-        traces_path = os.path.join(upload_dir, traces.filename)
-        filenames["traces"] = traces.filename
+        safe_filename = os.path.basename(traces.filename)
+        traces_path = os.path.join(upload_dir, safe_filename)
+        filenames["traces"] = safe_filename
         raw_paths["traces"] = traces_path
         with open(traces_path, "wb") as buffer:
             shutil.copyfileobj(traces.file, buffer)
@@ -263,8 +283,9 @@ async def process_pcb(
         raw_paths["traces"] = traces_path
             
     if outline:
-        outline_path = os.path.join(upload_dir, outline.filename)
-        filenames["outline"] = outline.filename
+        safe_filename = os.path.basename(outline.filename)
+        outline_path = os.path.join(upload_dir, safe_filename)
+        filenames["outline"] = safe_filename
         raw_paths["outline"] = outline_path
         with open(outline_path, "wb") as buffer:
             shutil.copyfileobj(outline.file, buffer)
@@ -273,9 +294,22 @@ async def process_pcb(
         filenames["outline"] = get_old_name("outline")
         raw_paths["outline"] = outline_path
             
+    if user_drawings:
+        safe_filename = os.path.basename(user_drawings.filename)
+        ud_path = os.path.join(upload_dir, safe_filename)
+        filenames["user_drawings"] = safe_filename
+        raw_paths["user_drawings"] = ud_path
+        with open(ud_path, "wb") as buffer:
+            shutil.copyfileobj(user_drawings.file, buffer)
+    elif get_old_raw("user_drawings") and os.path.exists(get_old_raw("user_drawings")):
+        ud_path = get_old_raw("user_drawings")
+        filenames["user_drawings"] = get_old_name("user_drawings")
+        raw_paths["user_drawings"] = ud_path
+
     if drill:
-        drill_path = os.path.join(upload_dir, drill.filename)
-        filenames["drill"] = drill.filename
+        safe_filename = os.path.basename(drill.filename)
+        drill_path = os.path.join(upload_dir, safe_filename)
+        filenames["drill"] = safe_filename
         raw_paths["drill"] = drill_path
         with open(drill_path, "wb") as buffer:
             shutil.copyfileobj(drill.file, buffer)
@@ -294,6 +328,16 @@ async def process_pcb(
     }
     raw_files, pcb_params = transformer.run_pcb2gcode(traces_path, outline_path, drill_path, config)
     
+    # Generate Pocketing if user_drawings exists
+    if has_ud and raw_paths.get("user_drawings"):
+        from pocketing import PocketingGenerator
+        ud_conf_path = os.path.join(os.path.dirname(BASE_DIR), "config", "user_drawings.conf")
+        pock_gen = PocketingGenerator(ud_conf_path)
+        raw_ud_gcode = os.path.join(DATA_DIR, "gcode_raw", "pcb_project_user_drawings.gcode")
+        mirror_x_abs = get_config_value("mirror-absolute", "0") == "1"
+        pock_gen.generate(raw_paths["user_drawings"], raw_ud_gcode, auto_mirror_x=mirror_x_abs)
+        raw_files["user_drawings"] = raw_ud_gcode
+
     # Parse requested tools from Drill file if available
     requested_tools = {}
     if drill_path and os.path.exists(drill_path):
@@ -305,11 +349,12 @@ async def process_pcb(
     dimensions = {}
     tool_metadata = {}
     
-    for key in ["traces", "outline", "drill"]:
+    for key in ["traces", "user_drawings", "outline", "drill"]:
         raw_path = raw_files.get(key)
         if raw_path and os.path.exists(raw_path):
             # Processing (Offset + Leveling + Dimensions)
-            gcode, dims = transformer.process_gcode(raw_path, offset_x, offset_y, extra_header=pcb_params)
+            header_params = pcb_params if key != "user_drawings" else None
+            gcode, dims = transformer.process_gcode(raw_path, offset_x, offset_y, extra_header=header_params)
             
             if dims:
                 dimensions[key] = dims
@@ -323,6 +368,9 @@ async def process_pcb(
             elif key == "outline":
                 dia = get_config_value("cutter-diameter", "unknown")
                 header = f"(MSG, Please insert Outline Cutter: {dia})\n"
+            elif key == "user_drawings":
+                dia = get_ud_config_value("tool-diameter", "unknown")
+                header = f"(MSG, Please insert Pocketing Tool: {dia})\n"
             
             if header:
                 gcode = header + gcode
@@ -340,6 +388,8 @@ async def process_pcb(
                 tool_metadata["traces"] = get_config_value("mill-diameters", "?")
             elif key == "outline":
                 tool_metadata["outline"] = get_config_value("cutter-diameter", "?")
+            elif key == "user_drawings":
+                tool_metadata["user_drawings"] = get_ud_config_value("tool-diameter", "?")
             
             # Split Drill Files for Manual Tool Change
             if key == "drill":
@@ -407,7 +457,7 @@ async def create_visualizations():
         images["heightmap"] = out_path_hm
 
     # 2. Visualize Leveled G-code (All types)
-    for key in ["traces", "outline", "drill"]:
+    for key in ["traces", "user_drawings", "outline", "drill"]:
         gcode_path = os.path.join(DATA_DIR, "gcode_processed", f"pcb_leveled_{key}.gcode")
         if os.path.exists(gcode_path):
             out_path_gc = os.path.join(DATA_DIR, f"viz_gcode_{key}.png")

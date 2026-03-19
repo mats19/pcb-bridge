@@ -10,6 +10,8 @@ dependencies:
   - numpy
   - matplotlib
   - python-multipart
+  - shapely
   - pip
   - pip:
     - flask-cors
+    - pcb-tools

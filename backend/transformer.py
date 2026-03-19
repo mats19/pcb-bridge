@@ -274,6 +274,10 @@ class PcbTransformer:
             # If no Z found (2D), set to zero
             if min_z == float('inf'): min_z = 0.0
             if max_z == float('-inf'): max_z = 0.0
+            if min_x == float('inf'): min_x = 0.0
+            if max_x == float('-inf'): max_x = 0.0
+            if min_y == float('inf'): min_y = 0.0
+            if max_y == float('-inf'): max_y = 0.0
             
             dims = {"min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y, "width": max_x - min_x, "height": max_y - min_y, "min_z": min_z, "max_z": max_z}
             
