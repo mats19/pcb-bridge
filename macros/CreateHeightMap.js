@@ -230,7 +230,7 @@
 
                 // Configuration
                 var zSafe = 2.0;       // Retract height [mm]
-                var zProbeMin = -5.0;  // Max depth [mm]
+                var zProbeMin = -2.0;  // Max depth [mm]
                 var feed = 100;        // Probing feed rate [mm/min]
 
                 // Generate points
